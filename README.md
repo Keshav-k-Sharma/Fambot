@@ -1,0 +1,203 @@
+# Fambot Backend
+
+HTTP API for user onboarding and **diabetes risk scoring** using a trained scikit-learn / XGBoost pipeline. Authentication is **Firebase ID tokens**; profiles are stored in **Cloud Firestore**.
+
+This repository is both a **batch training script** (builds `diabetes_model.pkl` from the Pima Indians diabetes dataset) and a **FastAPI** service that serves predictions and persists onboarding data.
+
+---
+
+## Features
+
+- **Health check** for load balancers and uptime checks.
+- **Authenticated user profile** (`GET /v1/me`) backed by Firestore document `users/{uid}`.
+- **Onboarding completion** (`PUT /v1/me/onboarding`) that:
+  - Validates body fields with Pydantic.
+  - Computes BMI from height and weight.
+  - Runs the ML pipeline to produce a **risk score** (0–100, from the positive-class probability) and **risk class** (`low` / `moderate` / `high`).
+  - Merges the result into the user’s Firestore document.
+
+---
+
+## Requirements
+
+- **Python** `>= 3.14` (see [`pyproject.toml`](pyproject.toml)).
+- **[uv](https://docs.astral.sh/uv/)** (recommended) or another PEP 517 installer.
+- For production-like runs: a **Google Cloud / Firebase** project with:
+  - **Application Default Credentials** (ADC), or `GOOGLE_APPLICATION_CREDENTIALS` pointing at a service account JSON file.
+  - **Firestore** enabled.
+  - **Firebase Authentication** if clients send real ID tokens.
+
+---
+
+## Repository layout
+
+| Path | Role |
+|------|------|
+| [`fambot_backend/app.py`](fambot_backend/app.py) | FastAPI app, routes, CORS, `run()` for Uvicorn. |
+| [`fambot_backend/schemas.py`](fambot_backend/schemas.py) | Pydantic request/response models. |
+| [`fambot_backend/inference.py`](fambot_backend/inference.py) | Model load, BMI, feature row construction, `predict_risk`. |
+| [`fambot_backend/deps.py`](fambot_backend/deps.py) | Firebase ID token verification → `uid`. |
+| [`fambot_backend/firebase_init.py`](fambot_backend/firebase_init.py) | One-time `firebase_admin` initialization (ADC). |
+| [`fambot_backend/firestore_users.py`](fambot_backend/firestore_users.py) | Firestore read/write for `users` collection. |
+| [`model.py`](model.py) | Training: logistic regression vs XGBoost, saves `diabetes_model.pkl` and `feature_importance.png`. |
+| [`sources/diabetes.csv`](sources/diabetes.csv) | Training data (Pima Indians diabetes CSV). |
+| [`diabetes_model.pkl`](diabetes_model.pkl) | Serialized **champion** pipeline (generated; may be gitignored). |
+
+Root [`main.py`](main.py) is a small placeholder and is **not** the training or API entry point.
+
+---
+
+## Install
+
+```bash
+cd fambot-backend
+uv sync
+```
+
+Installs the package and dependencies from `pyproject.toml`.
+
+---
+
+## Train the model
+
+Training compares **logistic regression** (with scaling) and **XGBoost** (random search), picks the better **5-fold CV ROC-AUC**, then saves the winning **full sklearn `Pipeline`** with `joblib`.
+
+```bash
+uv run model
+```
+
+Artifacts (by default next to the project root):
+
+- `diabetes_model.pkl` — required at API runtime unless `MODEL_PATH` overrides the location.
+- `feature_importance.png` — bar chart of importances or coefficient magnitudes.
+
+The training script treats zeros in `Glucose`, `BloodPressure`, `SkinThickness`, `Insulin`, and `BMI` as missing in the preprocessing branch used for those columns (Pima-style sentinel zeros).
+
+---
+
+## Run the API
+
+```bash
+uv run api
+```
+
+This invokes `fambot_backend.app:run`, which starts Uvicorn on:
+
+- **Host:** `HOST` (default `0.0.0.0`)
+- **Port:** `PORT` (default `8000`)
+
+Interactive docs (when the server is up):
+
+- Swagger UI: `http://localhost:8000/docs`
+- ReDoc: `http://localhost:8000/redoc`
+
+---
+
+## Environment variables
+
+| Variable | Purpose |
+|----------|---------|
+| `HOST` | Bind address for Uvicorn (default `0.0.0.0`). |
+| `PORT` | Listen port (default `8000`). |
+| `MODEL_PATH` | Optional absolute or relative path to `diabetes_model.pkl`. Defaults to repo-root `diabetes_model.pkl`. |
+| `FIREBASE_PROJECT_ID` | Firebase/GCP project ID passed into `firebase_admin.initialize_app`. |
+| `GOOGLE_CLOUD_PROJECT` | Alternative to `FIREBASE_PROJECT_ID` for the same purpose. |
+| `GOOGLE_APPLICATION_CREDENTIALS` | Path to service account JSON for ADC (typical for local dev). |
+| `FAMBOT_CORS_ORIGINS` | Comma-separated list of allowed origins for CORS. Default `*` (single origin string `*` in the list). Strip whitespace around entries. |
+| `FAMBOT_SKIP_AUTH` | Set to `1` to **skip Firebase token verification** (local only; **never** in production). Uses `FAMBOT_DEV_UID` as the fake `uid` (default `dev-user`). |
+| `FAMBOT_SKIP_FIRESTORE` | Set to `1` to skip Firestore reads/writes (returns synthetic profile data for onboarding). |
+| `MPLBACKEND` | Used by `model.py` for matplotlib (default `Agg` if unset). |
+
+---
+
+## API reference
+
+### `GET /health`
+
+No authentication. Returns `{"status": "ok"}`.
+
+### `GET /v1/me`
+
+**Auth:** `Authorization: Bearer <Firebase ID token>`
+
+Returns the current user’s profile from Firestore, or an empty-ish profile if the document does not exist.
+
+### `PUT /v1/me/onboarding`
+
+**Auth:** Same as above.
+
+**JSON body** (`OnboardingIn`):
+
+| Field | Type | Notes |
+|-------|------|--------|
+| `age` | int | 1–120 |
+| `height_cm` | float | 50–260 |
+| `weight_kg` | float | 20–400 |
+| `glucose` | float | 1–600 |
+| `blood_pressure_diastolic` | float | 20–200; mapped to model feature **BloodPressure** (Pima column is diastolic-like). |
+| `blood_pressure_systolic` | float, optional | 40–300; stored in Firestore only. |
+
+**Response** (`OnboardingOut`): includes updated `profile`, `risk_score` (0–100), and `risk_class`.
+
+**Risk buckets** (in [`fambot_backend/inference.py`](fambot_backend/inference.py)):
+
+- `low`: score below 34  
+- `moderate`: score from 34 up to (but not including) 67  
+- `high`: score 67 or above  
+
+---
+
+## Firestore schema
+
+Collection: **`users`**, document ID: **Firebase `uid`**.
+
+Fields written on onboarding (camelCase in Firestore):
+
+| Firestore field | Meaning |
+|-----------------|--------|
+| `age` | User age |
+| `heightCm` | Height (cm) |
+| `weightKg` | Weight (kg) |
+| `glucose` | Plasma glucose |
+| `bloodPressureDiastolic` | Diastolic BP |
+| `bloodPressureSystolic` | Systolic BP (optional) |
+| `bmi` | Computed BMI |
+| `riskScore` | 0–100 |
+| `riskClass` | `"low"` \| `"moderate"` \| `"high"` |
+| `onboardingComplete` | `true` after successful PUT |
+| `updatedAt` | Server timestamp (UTC) |
+
+Reads map these back into **snake_case** JSON in `UserProfileOut`.
+
+---
+
+## Inference and the ML pipeline
+
+- The API builds a **single-row DataFrame** with columns in this order:  
+  `Pregnancies`, `Glucose`, `BloodPressure`, `SkinThickness`, `Insulin`, `BMI`, `DiabetesPedigreeFunction`, `Age`.
+- **Pregnancies** is always `0` in the current onboarding flow (no pregnancy field in the API).
+- **BloodPressure** uses **diastolic** from the request.
+- **SkinThickness**, **Insulin**, and **DiabetesPedigreeFunction** are filled from **medians of the training CSV** (with zeros→NaN for the first two before median), cached in process.
+- **BMI** is computed from `height_cm` and `weight_kg`, not taken from the user as a raw field.
+
+The loaded object must be a sklearn estimator with `predict_proba` when possible; the positive class probability is scaled to 0–100.
+
+---
+
+## Security notes
+
+- Production deployments must **not** set `FAMBOT_SKIP_AUTH=1`.
+- Use **HTTPS** in front of the API; protect service account keys and rotate them.
+- Firestore **security rules** must restrict `users/{uid}` so clients can only access their own document if clients talk to Firestore directly; this API uses the **Admin SDK** server-side, so rules do not apply to the backend process—protect the backend credentials instead.
+
+---
+
+## Medical and legal disclaimer
+
+The model is trained on **historical tabular data** for research and engineering demonstration. It is **not** a substitute for professional medical advice, diagnosis, or treatment. Any product use requires appropriate clinical and legal review.
+
+---
+
+## License / project metadata
+
+See `pyproject.toml` for package name and version. Add a license file if you distribute this code.

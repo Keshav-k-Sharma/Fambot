@@ -3,7 +3,25 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Literal
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, EmailStr, Field
+
+
+class SignupIn(BaseModel):
+    email: EmailStr
+    password: str = Field(min_length=6, max_length=4096)
+
+
+class LoginIn(BaseModel):
+    email: EmailStr
+    password: str = Field(min_length=1, max_length=4096)
+
+
+class TokenOut(BaseModel):
+    access_token: str
+    token_type: str = "bearer"
+    expires_in: int
+    uid: str
+    email: str | None = None
 
 
 class OnboardingIn(BaseModel):

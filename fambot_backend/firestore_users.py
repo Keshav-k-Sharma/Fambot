@@ -38,6 +38,16 @@ def _doc_to_profile(uid: str, data: dict[str, Any] | None) -> UserProfileOut:
     )
 
 
+def ensure_user_document(uid: str) -> None:
+    """Create a minimal Firestore user doc if missing (signup)."""
+    if os.environ.get("FAMBOT_SKIP_FIRESTORE") == "1":
+        return
+    ref = _db().collection("users").document(uid)
+    if ref.get().exists:
+        return
+    ref.set({"onboardingComplete": False})
+
+
 def get_user_profile(uid: str) -> UserProfileOut:
     if os.environ.get("FAMBOT_SKIP_FIRESTORE") == "1":
         return UserProfileOut(uid=uid, onboarding_complete=False)

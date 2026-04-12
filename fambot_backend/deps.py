@@ -2,11 +2,11 @@ from __future__ import annotations
 
 import os
 
+import jwt
 from fastapi import Depends, HTTPException
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
-from firebase_admin import auth
 
-from fambot_backend.firebase_init import init_firebase
+from fambot_backend.jwt_tokens import decode_and_verify
 
 _bearer = HTTPBearer(auto_error=False)
 
@@ -19,12 +19,16 @@ async def firebase_uid(
         return os.environ.get("FAMBOT_DEV_UID", "dev-user")
     if creds is None or not creds.credentials:
         raise HTTPException(status_code=401, detail="Missing or invalid Authorization header")
-    init_firebase()
     try:
-        decoded = auth.verify_id_token(creds.credentials)
-    except Exception as exc:  # firebase raises various subclasses
-        raise HTTPException(status_code=401, detail="Invalid or expired ID token") from exc
-    uid = decoded.get("uid")
-    if not uid:
-        raise HTTPException(status_code=401, detail="Token missing uid")
+        payload = decode_and_verify(creds.credentials)
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=500,
+            detail="Server misconfiguration: FAMBOT_JWT_SECRET is not set",
+        ) from exc
+    except jwt.exceptions.InvalidTokenError as exc:
+        raise HTTPException(status_code=401, detail="Invalid or expired access token") from exc
+    uid = payload.get("sub")
+    if not uid or not isinstance(uid, str):
+        raise HTTPException(status_code=401, detail="Token missing subject")
     return uid
