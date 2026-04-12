@@ -3,12 +3,21 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Literal
 
-from pydantic import BaseModel, EmailStr, Field
+from pydantic import BaseModel, EmailStr, Field, field_validator
 
 
 class SignupIn(BaseModel):
     email: EmailStr
     password: str = Field(min_length=6, max_length=4096)
+    name: str | None = Field(default=None, max_length=128, description="Display name; stored in Firebase Auth and Firestore")
+
+    @field_validator("name")
+    @classmethod
+    def strip_name(cls, v: str | None) -> str | None:
+        if v is None:
+            return None
+        s = v.strip()
+        return s if s else None
 
 
 class LoginIn(BaseModel):
@@ -44,6 +53,7 @@ class OnboardingIn(BaseModel):
 
 class UserProfileOut(BaseModel):
     uid: str
+    display_name: str | None = None
     age: int | None = None
     height_cm: float | None = None
     weight_kg: float | None = None

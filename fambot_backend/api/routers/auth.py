@@ -36,12 +36,15 @@ def _identity_toolkit_http(exc: IdentityToolkitError) -> HTTPException:
 def auth_signup(body: SignupIn) -> TokenOut:
     init_firebase()
     try:
-        user = auth.create_user(email=str(body.email), password=body.password)
+        create_kwargs: dict = {"email": str(body.email), "password": body.password}
+        if body.name:
+            create_kwargs["display_name"] = body.name
+        user = auth.create_user(**create_kwargs)
     except auth.EmailAlreadyExistsError:
         raise HTTPException(status_code=409, detail="Email already registered") from None
     except FirebaseError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
-    ensure_user_document(user.uid)
+    ensure_user_document(user.uid, display_name=body.name)
     try:
         token, exp = mint_access_token(user.uid, str(body.email))
     except ValueError as exc:

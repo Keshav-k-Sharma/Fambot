@@ -90,7 +90,7 @@ When adding tests or local scripts, prefer `FAMBOT_SKIP_*` flags over mocking un
 ## API and data conventions
 
 1. **JSON API (Pydantic):** `snake_case` field names (`height_cm`, `blood_pressure_diastolic`, …).
-2. **Firestore documents:** `camelCase` keys (`heightCm`, `bloodPressureDiastolic`, …). Mapping lives in `services/firestore_users.py` only—keep it centralized.
+2. **Firestore documents:** `camelCase` keys (`displayName`, `heightCm`, `bloodPressureDiastolic`, …). Mapping lives in `services/firestore_users.py` only—keep it centralized.
 3. **Model feature names:** Must match `FEATURE_ORDER` in `services/inference.py` and the column order expected by the saved pipeline. Any new user-facing field that maps into the model requires coordinated updates in:
    - `schemas.OnboardingIn`
    - `services/inference.predict_risk` row construction

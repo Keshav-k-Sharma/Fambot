@@ -129,7 +129,7 @@ No authentication. Returns `{"status": "ok"}`.
 
 ### `POST /auth/signup`
 
-No authentication. **JSON body:** `email`, `password` (minimum length 6 per Firebase).
+No authentication. **JSON body:** `email`, `password` (minimum length 6 per Firebase), optional **`name`** (display name, max 128 characters; trimmed; stored as Firebase Auth `displayName` and on the Firestore user doc as `displayName` when present).
 
 Creates a Firebase Auth user via the Admin SDK, ensures a minimal Firestore `users/{uid}` document when Firestore is enabled, and returns a **JWT access token** plus `uid`, `email`, `expires_in`, and `token_type`.
 
@@ -147,7 +147,7 @@ Verifies credentials with the Identity Toolkit API (`FIREBASE_WEB_API_KEY` requi
 
 **Auth:** `Authorization: Bearer <JWT access token>`
 
-Returns the current user’s profile from Firestore, or an empty-ish profile if the document does not exist.
+Returns the current user’s profile from Firestore, or an empty-ish profile if the document does not exist. Includes `display_name` when set at signup (`displayName` in Firestore).
 
 **Errors:** `401` if the `Authorization` header is missing or the JWT is invalid/expired; `500` if `FAMBOT_JWT_SECRET` is not set (server cannot verify tokens).
 
@@ -192,10 +192,11 @@ Returns the **stored** diabetes risk from Firestore (`riskScore` / `riskClass` w
 
 Collection: **`users`**, document ID: **Firebase `uid`**.
 
-Fields written on onboarding (camelCase in Firestore):
+Fields (camelCase in Firestore):
 
 | Firestore field | Meaning |
 |-----------------|--------|
+| `displayName` | Optional display name from signup |
 | `age` | User age |
 | `heightCm` | Height (cm) |
 | `weightKg` | Weight (kg) |
