@@ -1,0 +1,24 @@
+# Render Blueprint: https://render.com/docs/infrastructure-as-code
+# After linking the repo, set secret env var values in the dashboard (sync: false prompts on apply).
+services:
+  - type: web
+    name: fambot-backend
+    runtime: python
+    plan: free
+    region: oregon
+    buildCommand: uv sync && uv run model
+    startCommand: bash scripts/render_start.sh
+    healthCheckPath: /health
+    envVars:
+      - key: PYTHON_VERSION
+        value: "3.14"
+      - key: FIREBASE_PROJECT_ID
+        sync: false
+      - key: FAMBOT_JWT_SECRET
+        sync: false
+      - key: FIREBASE_WEB_API_KEY
+        sync: false
+      - key: FAMBOT_CORS_ORIGINS
+        sync: false
+      - key: GOOGLE_SERVICE_ACCOUNT_JSON
+        sync: false

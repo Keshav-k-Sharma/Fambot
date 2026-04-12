@@ -44,6 +44,7 @@ Agents should preserve the separation between **training** (`model.py`), **HTTP 
 |---------|------------|----------------|
 | `uv run api` | `[project.scripts] api = "fambot_backend.app:run"` | Uvicorn on `fambot_backend.app:app`. |
 | `uv run model` | `[project.scripts] model = "model:main"` | Training pipeline in `model.py`; writes `diabetes_model.pkl` and `feature_importance.png`. |
+| `bash scripts/render_start.sh` | Shell (Render) | Writes `GOOGLE_SERVICE_ACCOUNT_JSON` to a temp file, sets `GOOGLE_APPLICATION_CREDENTIALS`, `exec uv run api`. |
 
 ---
 
@@ -64,7 +65,15 @@ fambot_backend/
     firestore_users.py      # get_user_profile, upsert_onboarding, ensure_user_document
 model.py                    # Offline training; compares LR vs XGBoost, saves champion
 sources/diabetes.csv        # Training data; also used at inference for medians
+render.yaml                 # Render Blueprint (build/start, env var names)
+scripts/render_start.sh     # Render: materialize GOOGLE_SERVICE_ACCOUNT_JSON → ADC file, start API
 ```
+
+---
+
+## Deployment (Render)
+
+Production on **Render** is documented in **[`README.md`](README.md)** (Firebase checklist, `render.yaml`, `scripts/render_start.sh`, required secrets). On Render, credentials are supplied via `GOOGLE_SERVICE_ACCOUNT_JSON` and the start script; local dev typically uses `GOOGLE_APPLICATION_CREDENTIALS` pointing at a file path.
 
 ---
 
@@ -74,7 +83,8 @@ sources/diabetes.csv        # Training data; also used at inference for medians
 |----------|-------------------------|
 | `MODEL_PATH` | Overrides default `diabetes_model.pkl` path in `services.inference._model_path()`. |
 | `FIREBASE_PROJECT_ID` / `GOOGLE_CLOUD_PROJECT` | Passed into Firebase app options when set. |
-| `GOOGLE_APPLICATION_CREDENTIALS` | Local/service credential path for ADC. |
+| `GOOGLE_APPLICATION_CREDENTIALS` | Local/service credential path for ADC. On Render, set by `scripts/render_start.sh` after writing `GOOGLE_SERVICE_ACCOUNT_JSON`. |
+| `GOOGLE_SERVICE_ACCOUNT_JSON` | Render: full service account JSON in one env var; consumed only by `scripts/render_start.sh`. |
 | `FAMBOT_SKIP_AUTH=1` | **Dev only.** Bypasses JWT verification; uses `FAMBOT_DEV_UID`. Never enable in production code paths or docs that imply production. |
 | `FAMBOT_DEV_UID` | UID string when `FAMBOT_SKIP_AUTH=1` (default `dev-user`). |
 | `FAMBOT_SKIP_FIRESTORE=1` | Skips Firestore; returns in-memory profile for testing. |
@@ -137,6 +147,7 @@ If you change preprocessing in `model.py`, mirror any assumptions used at infere
 - `.venv`
 - `diabetes_model.pkl`
 - `feature_importance.png`
+- `firebase-admin.json` (local Firebase Admin SDK key; never commit)
 
 The API **fails at runtime** if `diabetes_model.pkl` is missing (unless you point `MODEL_PATH` to a valid file). Agents should mention `uv run model` in docs or setup when adding features that require the model.
 

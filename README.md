@@ -118,6 +118,50 @@ Interactive docs (when the server is up):
 | `FAMBOT_JWT_EXPIRES_SECONDS` | Access token lifetime in seconds (default `3600`; minimum `60`). |
 | `FIREBASE_WEB_API_KEY` | Firebase **Web API key** (Identity Toolkit) for `POST /auth/login` only; not a substitute for ADC. |
 | `MPLBACKEND` | Used by `model.py` for matplotlib (default `Agg` if unset). |
+| `GOOGLE_SERVICE_ACCOUNT_JSON` | **Render only:** entire service account JSON as a string secret; [`scripts/render_start.sh`](scripts/render_start.sh) writes it to a temp file and sets `GOOGLE_APPLICATION_CREDENTIALS`. Not used locally unless you mimic that flow. |
+
+---
+
+## Deployment (Render + Firebase)
+
+Deploy the API as a **Render Web Service** (Python). The repo includes [`render.yaml`](render.yaml) (Blueprint) and [`scripts/render_start.sh`](scripts/render_start.sh) so the service account is provided at runtime without committing JSON keys.
+
+### 1. Firebase / Google Cloud (one-time)
+
+1. In the [Firebase Console](https://console.firebase.google.com/), **create a project** and note the **Project ID** (use the same value for `FIREBASE_PROJECT_ID` on Render).
+2. **Authentication** → Sign-in method → enable **Email/Password**.
+3. **Firestore** → create a database (choose a location; Native mode is typical).
+4. **Project settings** (gear) → **Your apps** → if you need the Web API key, use the **Web API key** from the Firebase config (or Google Cloud Console → APIs & Services → Credentials). Set it as `FIREBASE_WEB_API_KEY` on Render (used only for `POST /auth/login` via Identity Toolkit).
+5. **Project settings** → **Service accounts** → **Generate new private key** (JSON). Keep this file private. Paste its **full JSON** into Render as `GOOGLE_SERVICE_ACCOUNT_JSON` (see below). The default Firebase Admin service account can create Auth users and access Firestore when those products are enabled.
+
+Do **not** set `FAMBOT_SKIP_AUTH` or `FAMBOT_SKIP_FIRESTORE` in production.
+
+### 2. Render service
+
+- **Connect** this Git repository to Render and **apply** the Blueprint from [`render.yaml`](render.yaml), or create a **Web Service** manually with the same settings.
+- **Build command:** `uv sync && uv run model` (installs deps and generates `diabetes_model.pkl` in the slug; it is gitignored but required at runtime).
+- **Start command:** `bash scripts/render_start.sh` (writes `GOOGLE_SERVICE_ACCOUNT_JSON` to `/tmp/gcp-sa.json`, sets `GOOGLE_APPLICATION_CREDENTIALS`, runs `uv run api`).
+- **Health check path:** `/health`.
+- **Environment:** set `PYTHON_VERSION` to `3.14` if not inherited from [`.python-version`](.python-version). Set the secrets marked `sync: false` in [`render.yaml`](render.yaml) in the dashboard when prompted.
+
+| Render env | Purpose |
+|------------|---------|
+| `PYTHON_VERSION` | e.g. `3.14` (matches [`pyproject.toml`](pyproject.toml)). |
+| `FIREBASE_PROJECT_ID` | Firebase / GCP project ID. |
+| `FAMBOT_JWT_SECRET` | Long random secret (e.g. `openssl rand -hex 32`). |
+| `FIREBASE_WEB_API_KEY` | Firebase Web API key for Identity Toolkit. |
+| `FAMBOT_CORS_ORIGINS` | Comma-separated allowed origins for your web app (avoid `*` in production if you rely on credentialed CORS). |
+| `GOOGLE_SERVICE_ACCOUNT_JSON` | Full JSON from the service account key (single secret). |
+
+Render’s **free** web tier may **spin down** when idle (cold starts). Use a paid instance if you need the service always reachable.
+
+### 3. Smoke test after deploy
+
+Replace the host with your `*.onrender.com` URL:
+
+1. `GET /health` → `{"status":"ok"}`.
+2. `POST /auth/signup` then `POST /auth/login` with a test user.
+3. `PUT /me/onboarding` with `Authorization: Bearer <JWT>` and confirm data in Firestore `users/{uid}`.
 
 ---
 
