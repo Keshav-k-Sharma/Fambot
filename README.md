@@ -1,5 +1,3 @@
-<<<<<<< Updated upstream
-=======
 # Fambot Backend
 
 HTTP API for user onboarding and **diabetes risk scoring** using a trained scikit-learn / XGBoost pipeline. Clients authenticate with **JWT access tokens** issued by this API after **email/password signup and login**; accounts live in **Firebase Authentication** (server-side Admin SDK + Identity Toolkit), and profiles are stored in **Cloud Firestore**.
@@ -111,7 +109,8 @@ Interactive docs (when the server is up):
 | `GOOGLE_CLOUD_PROJECT` | Alternative to `FIREBASE_PROJECT_ID` for the same purpose. |
 | `GOOGLE_APPLICATION_CREDENTIALS` | Path to service account JSON for ADC (typical for local dev). |
 | `FAMBOT_CORS_ORIGINS` | Comma-separated list of allowed origins for CORS. Default `*` (single origin string `*` in the list). Strip whitespace around entries. |
-| `FAMBOT_SKIP_AUTH` | Set to `1` to **skip JWT verification** (local only; **never** in production). Uses `FAMBOT_DEV_UID` as the fake `uid` (default `dev-user`). |
+| `FAMBOT_SKIP_AUTH` | Set to `1` to **skip JWT verification** (local only; **never** in production). When set, the resolved user id comes from `FAMBOT_DEV_UID`. |
+| `FAMBOT_DEV_UID` | Fake Firebase `uid` used when `FAMBOT_SKIP_AUTH=1` (default `dev-user`). |
 | `FAMBOT_SKIP_FIRESTORE` | Set to `1` to skip Firestore reads/writes (returns synthetic profile data for onboarding). |
 | `FAMBOT_JWT_SECRET` | Secret for signing and verifying JWT access tokens (required when auth is not skipped). |
 | `FAMBOT_JWT_EXPIRES_SECONDS` | Access token lifetime in seconds (default `3600`; minimum `60`). |
@@ -140,7 +139,7 @@ No authentication. **JSON body:** `email`, `password`.
 
 Verifies credentials with the Identity Toolkit API (`FIREBASE_WEB_API_KEY` required) and returns the same token shape as signup.
 
-**Errors:** `401` for invalid credentials; `403` if the account is disabled; `500` if `FAMBOT_JWT_SECRET` or `FIREBASE_WEB_API_KEY` is missing.
+**Errors:** `401` for invalid credentials; `403` if the account is disabled; `500` if `FAMBOT_JWT_SECRET` or `FIREBASE_WEB_API_KEY` is missing; `502` if Identity Toolkit returns a server error (upstream unavailable).
 
 ### `GET /v1/me`
 
@@ -148,9 +147,13 @@ Verifies credentials with the Identity Toolkit API (`FIREBASE_WEB_API_KEY` requi
 
 Returns the current user’s profile from Firestore, or an empty-ish profile if the document does not exist.
 
+**Errors:** `401` if the `Authorization` header is missing or the JWT is invalid/expired; `500` if `FAMBOT_JWT_SECRET` is not set (server cannot verify tokens).
+
 ### `PUT /v1/me/onboarding`
 
 **Auth:** Same as above (`Bearer` JWT).
+
+**Errors:** Same authentication errors as `GET /v1/me`.
 
 **JSON body** (`OnboardingIn`):
 
@@ -228,4 +231,3 @@ The model is trained on **historical tabular data** for research and engineering
 ## License / project metadata
 
 See `pyproject.toml` for package name and version. Add a license file if you distribute this code.
->>>>>>> Stashed changes

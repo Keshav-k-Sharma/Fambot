@@ -77,6 +77,7 @@ sources/diabetes.csv  # Training data; also used at inference for medians
 | `FIREBASE_PROJECT_ID` / `GOOGLE_CLOUD_PROJECT` | Passed into Firebase app options when set. |
 | `GOOGLE_APPLICATION_CREDENTIALS` | Local/service credential path for ADC. |
 | `FAMBOT_SKIP_AUTH=1` | **Dev only.** Bypasses JWT verification; uses `FAMBOT_DEV_UID`. Never enable in production code paths or docs that imply production. |
+| `FAMBOT_DEV_UID` | UID string when `FAMBOT_SKIP_AUTH=1` (default `dev-user`). |
 | `FAMBOT_SKIP_FIRESTORE=1` | Skips Firestore; returns in-memory profile for testing. |
 | `FAMBOT_JWT_SECRET` | Required (when auth is not skipped) to sign tokens at signup/login and verify them on protected routes. |
 | `FAMBOT_JWT_EXPIRES_SECONDS` | Access token TTL (defaults documented in `jwt_tokens.py` / README). |
