@@ -9,15 +9,15 @@ from pydantic import BaseModel, EmailStr, Field, field_validator
 class SignupIn(BaseModel):
     email: EmailStr
     password: str = Field(min_length=6, max_length=4096)
-    name: str | None = Field(default=None, max_length=128, description="Display name; stored in Firebase Auth and Firestore")
+    name: str = Field(max_length=128, description="Display name; stored in Firebase Auth and Firestore")
 
     @field_validator("name")
     @classmethod
-    def strip_name(cls, v: str | None) -> str | None:
-        if v is None:
-            return None
+    def strip_name(cls, v: str) -> str:
         s = v.strip()
-        return s if s else None
+        if not s:
+            raise ValueError("name cannot be empty")
+        return s
 
 
 class LoginIn(BaseModel):

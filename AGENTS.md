@@ -100,7 +100,7 @@ When adding tests or local scripts, prefer `FAMBOT_SKIP_*` flags over mocking un
 
 ## Authentication flow
 
-1. **Signup:** `POST /auth/signup` creates a Firebase Auth user with `firebase_admin.auth.create_user`, ensures a Firestore user doc, mints a JWT (`sub` = Firebase `uid`).
+1. **Signup:** `POST /auth/signup` creates a Firebase Auth user with `firebase_admin.auth.create_user` (email, password, required `name` as `display_name`), ensures a Firestore user doc, mints a JWT (`sub` = Firebase `uid`).
 2. **Login:** `POST /auth/login` calls Identity Toolkit `signInWithPassword` (requires `FIREBASE_WEB_API_KEY`), then mints the same JWT shape from `localId`.
 3. **Protected routes:** client sends `Authorization: Bearer <JWT>`. `core.deps.firebase_uid` verifies the JWT with `core.jwt_tokens.decode_and_verify` and returns `sub` as the uid string (name kept for minimal churn).
 4. If `FAMBOT_SKIP_AUTH=1`, returns a fixed dev UID without validating a token.

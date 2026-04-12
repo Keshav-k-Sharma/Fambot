@@ -129,7 +129,7 @@ No authentication. Returns `{"status": "ok"}`.
 
 ### `POST /auth/signup`
 
-No authentication. **JSON body:** `email`, `password` (minimum length 6 per Firebase), optional **`name`** (display name, max 128 characters; trimmed; stored as Firebase Auth `displayName` and on the Firestore user doc as `displayName` when present).
+No authentication. **JSON body:** `email`, `password` (minimum length 6 per Firebase), **`name`** (display name, required, max 128 characters after trimming; stored as Firebase Auth `displayName` and on the Firestore user doc as `displayName`).
 
 Creates a Firebase Auth user via the Admin SDK, ensures a minimal Firestore `users/{uid}` document when Firestore is enabled, and returns a **JWT access token** plus `uid`, `email`, `expires_in`, and `token_type`.
 
@@ -196,7 +196,7 @@ Fields (camelCase in Firestore):
 
 | Firestore field | Meaning |
 |-----------------|--------|
-| `displayName` | Optional display name from signup |
+| `displayName` | Display name from signup |
 | `age` | User age |
 | `heightCm` | Height (cm) |
 | `weightKg` | Weight (kg) |

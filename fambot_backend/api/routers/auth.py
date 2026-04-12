@@ -36,10 +36,11 @@ def _identity_toolkit_http(exc: IdentityToolkitError) -> HTTPException:
 def auth_signup(body: SignupIn) -> TokenOut:
     init_firebase()
     try:
-        create_kwargs: dict = {"email": str(body.email), "password": body.password}
-        if body.name:
-            create_kwargs["display_name"] = body.name
-        user = auth.create_user(**create_kwargs)
+        user = auth.create_user(
+            email=str(body.email),
+            password=body.password,
+            display_name=body.name,
+        )
     except auth.EmailAlreadyExistsError:
         raise HTTPException(status_code=409, detail="Email already registered") from None
     except FirebaseError as exc:
