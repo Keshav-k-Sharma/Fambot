@@ -6,7 +6,7 @@ import jwt
 from fastapi import Depends, HTTPException
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 
-from fambot_backend.jwt_tokens import decode_and_verify
+from fambot_backend.core.jwt_tokens import decode_and_verify
 
 _bearer = HTTPBearer(auto_error=False)
 

@@ -11,7 +11,7 @@ import pandas as pd
 
 from fambot_backend.schemas import OnboardingIn
 
-_ROOT = Path(__file__).resolve().parents[1]
+_ROOT = Path(__file__).resolve().parents[2]
 _DATA_CSV = _ROOT / "sources" / "diabetes.csv"
 _DEFAULT_MODEL_PATH = _ROOT / "diabetes_model.pkl"
 

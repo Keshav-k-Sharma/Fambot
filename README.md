@@ -4,15 +4,17 @@ HTTP API for user onboarding and **diabetes risk scoring** using a trained sciki
 
 This repository is both a **batch training script** (builds `diabetes_model.pkl` from the Pima Indians diabetes dataset) and a **FastAPI** service that serves predictions and persists onboarding data.
 
+**Breaking change:** HTTP routes no longer use a `/v1/` prefix. Clients must call `/auth/…`, `/me/…`, and `/health` directly (for example `POST /auth/login` instead of `POST /v1/auth/login`).
+
 ---
 
 ## Features
 
 - **Health check** for load balancers and uptime checks.
-- **Signup and login** (`POST /v1/auth/signup`, `POST /v1/auth/login`) returning JWT access tokens; Firebase holds the canonical email/password user, Firestore stores profile data by `uid`.
-- **Authenticated user profile** (`GET /v1/me`) backed by Firestore document `users/{uid}`.
-- **Stored risk score** (`GET /v1/me/risk`) returning the persisted `risk_score` and `risk_class` from the last successful onboarding (no model inference on read).
-- **Onboarding completion** (`PUT /v1/me/onboarding`) that:
+- **Signup and login** (`POST /auth/signup`, `POST /auth/login`) returning JWT access tokens; Firebase holds the canonical email/password user, Firestore stores profile data by `uid`.
+- **Authenticated user profile** (`GET /me`) backed by Firestore document `users/{uid}`.
+- **Stored risk score** (`GET /me/risk`) returning the persisted `risk_score` and `risk_class` from the last successful onboarding (no model inference on read).
+- **Onboarding completion** (`PUT /me/onboarding`) that:
   - Validates body fields with Pydantic.
   - Computes BMI from height and weight.
   - Runs the ML pipeline to produce a **risk score** (0–100, from the positive-class probability) and **risk class** (`low` / `moderate` / `high`).
@@ -37,19 +39,18 @@ This repository is both a **batch training script** (builds `diabetes_model.pkl`
 
 | Path | Role |
 |------|------|
-| [`fambot_backend/app.py`](fambot_backend/app.py) | FastAPI app, routes, CORS, `run()` for Uvicorn. |
+| [`fambot_backend/app.py`](fambot_backend/app.py) | FastAPI app factory, CORS, router includes, `run()` for Uvicorn. |
+| [`fambot_backend/api/routers/`](fambot_backend/api/routers/) | HTTP route modules (`health`, `auth`, `me`). |
 | [`fambot_backend/schemas.py`](fambot_backend/schemas.py) | Pydantic request/response models. |
-| [`fambot_backend/inference.py`](fambot_backend/inference.py) | Model load, BMI, feature row construction, `predict_risk`. |
-| [`fambot_backend/deps.py`](fambot_backend/deps.py) | JWT Bearer verification → `uid`. |
-| [`fambot_backend/jwt_tokens.py`](fambot_backend/jwt_tokens.py) | Mint and verify HS256 access tokens. |
-| [`fambot_backend/identity_toolkit.py`](fambot_backend/identity_toolkit.py) | Identity Toolkit `signInWithPassword` (login). |
-| [`fambot_backend/firebase_init.py`](fambot_backend/firebase_init.py) | One-time `firebase_admin` initialization (ADC). |
-| [`fambot_backend/firestore_users.py`](fambot_backend/firestore_users.py) | Firestore read/write for `users` collection. |
+| [`fambot_backend/core/deps.py`](fambot_backend/core/deps.py) | JWT Bearer verification → `uid`. |
+| [`fambot_backend/core/jwt_tokens.py`](fambot_backend/core/jwt_tokens.py) | Mint and verify HS256 access tokens. |
+| [`fambot_backend/core/firebase_init.py`](fambot_backend/core/firebase_init.py) | One-time `firebase_admin` initialization (ADC). |
+| [`fambot_backend/services/inference.py`](fambot_backend/services/inference.py) | Model load, BMI, feature row construction, `predict_risk`. |
+| [`fambot_backend/services/identity_toolkit.py`](fambot_backend/services/identity_toolkit.py) | Identity Toolkit `signInWithPassword` (login). |
+| [`fambot_backend/services/firestore_users.py`](fambot_backend/services/firestore_users.py) | Firestore read/write for `users` collection. |
 | [`model.py`](model.py) | Training: logistic regression vs XGBoost, saves `diabetes_model.pkl` and `feature_importance.png`. |
 | [`sources/diabetes.csv`](sources/diabetes.csv) | Training data (Pima Indians diabetes CSV). |
 | [`diabetes_model.pkl`](diabetes_model.pkl) | Serialized **champion** pipeline (generated; may be gitignored). |
-
-Root [`main.py`](main.py) is a small placeholder and is **not** the training or API entry point.
 
 ---
 
@@ -115,7 +116,7 @@ Interactive docs (when the server is up):
 | `FAMBOT_SKIP_FIRESTORE` | Set to `1` to skip Firestore reads/writes (returns synthetic profile data for onboarding). |
 | `FAMBOT_JWT_SECRET` | Secret for signing and verifying JWT access tokens (required when auth is not skipped). |
 | `FAMBOT_JWT_EXPIRES_SECONDS` | Access token lifetime in seconds (default `3600`; minimum `60`). |
-| `FIREBASE_WEB_API_KEY` | Firebase **Web API key** (Identity Toolkit) for `POST /v1/auth/login` only; not a substitute for ADC. |
+| `FIREBASE_WEB_API_KEY` | Firebase **Web API key** (Identity Toolkit) for `POST /auth/login` only; not a substitute for ADC. |
 | `MPLBACKEND` | Used by `model.py` for matplotlib (default `Agg` if unset). |
 
 ---
@@ -126,7 +127,7 @@ Interactive docs (when the server is up):
 
 No authentication. Returns `{"status": "ok"}`.
 
-### `POST /v1/auth/signup`
+### `POST /auth/signup`
 
 No authentication. **JSON body:** `email`, `password` (minimum length 6 per Firebase).
 
@@ -134,7 +135,7 @@ Creates a Firebase Auth user via the Admin SDK, ensures a minimal Firestore `use
 
 **Errors:** `409` if the email is already registered; `400` for invalid Firebase user creation; `500` if `FAMBOT_JWT_SECRET` is not set.
 
-### `POST /v1/auth/login`
+### `POST /auth/login`
 
 No authentication. **JSON body:** `email`, `password`.
 
@@ -142,7 +143,7 @@ Verifies credentials with the Identity Toolkit API (`FIREBASE_WEB_API_KEY` requi
 
 **Errors:** `401` for invalid credentials; `403` if the account is disabled; `500` if `FAMBOT_JWT_SECRET` or `FIREBASE_WEB_API_KEY` is missing; `502` if Identity Toolkit returns a server error (upstream unavailable).
 
-### `GET /v1/me`
+### `GET /me`
 
 **Auth:** `Authorization: Bearer <JWT access token>`
 
@@ -150,21 +151,21 @@ Returns the current user’s profile from Firestore, or an empty-ish profile if 
 
 **Errors:** `401` if the `Authorization` header is missing or the JWT is invalid/expired; `500` if `FAMBOT_JWT_SECRET` is not set (server cannot verify tokens).
 
-### `GET /v1/me/risk`
+### `GET /me/risk`
 
-**Auth:** Same as `GET /v1/me` (`Authorization: Bearer <JWT access token>`).
+**Auth:** Same as `GET /me` (`Authorization: Bearer <JWT access token>`).
 
 Returns the **stored** diabetes risk from Firestore (`riskScore` / `riskClass` written when onboarding completed). Does not run the ML model.
 
 **Response** (`RiskOut`): `risk_score` (0–100) and `risk_class` (`low` \| `moderate` \| `high`).
 
-**Errors:** Same authentication errors as `GET /v1/me`. **`404`** if onboarding is not complete or stored risk fields are missing (e.g. new user or incomplete document).
+**Errors:** Same authentication errors as `GET /me`. **`404`** if onboarding is not complete or stored risk fields are missing (e.g. new user or incomplete document).
 
-### `PUT /v1/me/onboarding`
+### `PUT /me/onboarding`
 
 **Auth:** Same as above (`Bearer` JWT).
 
-**Errors:** Same authentication errors as `GET /v1/me`.
+**Errors:** Same authentication errors as `GET /me`.
 
 **JSON body** (`OnboardingIn`):
 
@@ -179,7 +180,7 @@ Returns the **stored** diabetes risk from Firestore (`riskScore` / `riskClass` w
 
 **Response** (`OnboardingOut`): includes updated `profile`, `risk_score` (0–100), and `risk_class`.
 
-**Risk buckets** (in [`fambot_backend/inference.py`](fambot_backend/inference.py)):
+**Risk buckets** (in [`fambot_backend/services/inference.py`](fambot_backend/services/inference.py)):
 
 - `low`: score below 34  
 - `moderate`: score from 34 up to (but not including) 67  

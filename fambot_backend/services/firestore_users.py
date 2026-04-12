@@ -6,7 +6,7 @@ from typing import Any, Literal
 
 from firebase_admin import firestore
 
-from fambot_backend.firebase_init import init_firebase
+from fambot_backend.core.firebase_init import init_firebase
 from fambot_backend.schemas import OnboardingIn, UserProfileOut
 
 
