@@ -1,12 +1,12 @@
 # Fambot Backend
 
-HTTP API for user onboarding and **cardiovascular risk scoring** using a trained scikit-learn / XGBoost (or HistGradientBoosting) pipeline. Clients authenticate with **JWT access tokens** issued by this API after **email/password signup and login**; accounts live in **Firebase Authentication** (server-side Admin SDK + Identity Toolkit), and profiles are stored in **Cloud Firestore**.
+HTTP API for user onboarding and **cardiovascular (heart/circulatory) risk scoring** using a trained scikit-learn / XGBoost (or HistGradientBoosting) pipeline. It is **not** a diabetes product; training data and field names follow a public **cardio** exam survey (ordinal tiers, not lab glucose in mg/dL). Clients authenticate with **JWT access tokens** issued by this API after **email/password signup and login**; accounts live in **Firebase Authentication** (server-side Admin SDK + Identity Toolkit), and profiles are stored in **Cloud Firestore**.
 
 This repository is both a **batch training script** (builds `cardiovascular_model.pkl` from [`sources/cardio_train.csv`](sources/cardio_train.csv)) and a **FastAPI** service that serves predictions and persists onboarding data.
 
 **Breaking change:** HTTP routes no longer use a `/v1/` prefix. Clients must call `/auth/…`, `/me/…`, and `/health` directly (for example `POST /auth/login` instead of `POST /v1/auth/login`).
 
-**API 0.3.0:** `PUT /me/onboarding` request body uses cardiovascular-aligned fields (gender, BP systolic/diastolic, cholesterol/glucose ordinals, optional lifestyle flags). See [Onboarding](#put-meonboarding) below.
+**API 0.4.0:** `PUT /me/onboarding` uses cardiovascular-aligned fields (gender, BP, cholesterol and **`gluc_ordinal`** survey tiers, optional lifestyle flags). See [Onboarding](#put-meonboarding) below.
 
 ---
 
@@ -227,7 +227,7 @@ Returns the **stored** cardiovascular risk from Firestore (`riskScore` / `riskCl
 | `blood_pressure_diastolic` | float | 40–150 (mm Hg); must be **less than** systolic |
 | `gender` | `"female"` \| `"male"` | Maps to dataset codes 1 / 2 |
 | `cholesterol` | 1, 2, or 3 | Ordinal: 1 = normal, 2 = above normal, 3 = well above normal |
-| `glucose_level` | 1, 2, or 3 | Blood glucose category (same ordinal scale as training data) |
+| `gluc_ordinal` | 1, 2, or 3 | Self-reported tier matching training column `gluc` (not a blood test value) |
 | `smokes` | bool or omit | Omit to let the model impute from training distribution |
 | `drinks_alcohol` | bool or omit | Omit to impute |
 | `physically_active` | bool or omit | Omit to impute |
@@ -256,7 +256,7 @@ Fields (camelCase in Firestore):
 | `weightKg` | Weight (kg) |
 | `gender` | `"female"` or `"male"` |
 | `cholesterol` | 1, 2, or 3 |
-| `glucoseLevel` | 1, 2, or 3 |
+| `glucOrdinal` | 1, 2, or 3 (legacy `glucoseLevel` still read if present) |
 | `smokes` | Boolean or null |
 | `drinksAlcohol` | Boolean or null |
 | `physicallyActive` | Boolean or null |
@@ -275,7 +275,7 @@ Reads map these back into **snake_case** JSON in `UserProfileOut`.
 ## Inference and the ML pipeline
 
 - Feature names and order are defined once in [`fambot_backend/cardio_features.py`](fambot_backend/cardio_features.py) (`FEATURE_ORDER`) and must match the columns saved in `cardiovascular_model.pkl`.
-- The API builds a **single-row DataFrame** with: `age_years`, `gender`, `height`, `weight`, `ap_hi`, `ap_lo`, `cholesterol`, `gluc`, `smoke`, `alco`, `active`, plus derived `bmi`, `pulse_pressure`, `map_approx`.
+- The API builds a **single-row DataFrame** with: `age_years`, `gender`, `height`, `weight`, `ap_hi`, `ap_lo`, `cholesterol`, `gluc` (from JSON `gluc_ordinal`), `smoke`, `alco`, `active`, plus derived `bmi`, `pulse_pressure`, `map_approx`.
 - Optional lifestyle fields omitted from JSON are passed as **missing values** and imputed by the **fitted `SimpleImputer`** inside the saved pipeline (trained on `cardio_train.csv`).
 - **BMI** is computed from `height_cm` and `weight_kg` for both persistence and the feature row.
 
@@ -294,7 +294,7 @@ The loaded object must be a sklearn estimator with `predict_proba` when possible
 
 ## Medical and legal disclaimer
 
-The model is trained on **historical tabular data** for research and engineering demonstration. It is **not** a substitute for professional medical advice, diagnosis, or treatment. Any product use requires appropriate clinical and legal review.
+The model is trained on **historical tabular data** for research and engineering demonstration. It does **not** diagnose diabetes or any specific disease; it is **not** a substitute for professional medical advice, diagnosis, or treatment. Any product use requires appropriate clinical and legal review.
 
 ---
 

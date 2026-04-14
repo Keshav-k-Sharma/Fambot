@@ -1,7 +1,7 @@
 [project]
 name = "fambot-backend"
 version = "0.1.0"
-description = "Add your description here"
+description = "FastAPI backend: JWT auth, Firestore profiles, cardiovascular risk scoring (cardio_train pipeline)"
 readme = "README.md"
 requires-python = ">=3.14"
 dependencies = [

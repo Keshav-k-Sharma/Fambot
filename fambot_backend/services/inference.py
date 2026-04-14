@@ -52,7 +52,7 @@ def predict_risk(payload: OnboardingIn) -> tuple[float, Literal["low", "moderate
         blood_pressure_diastolic=payload.blood_pressure_diastolic,
         gender=payload.gender,
         cholesterol=payload.cholesterol,
-        glucose_level=payload.glucose_level,
+        gluc_ordinal=payload.gluc_ordinal,
         smokes=payload.smokes,
         drinks_alcohol=payload.drinks_alcohol,
         physically_active=payload.physically_active,

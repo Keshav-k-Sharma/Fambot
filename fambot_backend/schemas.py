@@ -36,7 +36,8 @@ class TokenOut(BaseModel):
 
 
 CholesterolLevel = Literal[1, 2, 3]
-GlucoseLevel = Literal[1, 2, 3]
+# Ordinal self-report tier matching cardio_train column `gluc` (not a laboratory glucose measurement).
+GlucOrdinal = Literal[1, 2, 3]
 
 
 class OnboardingIn(BaseModel):
@@ -61,9 +62,9 @@ class OnboardingIn(BaseModel):
             "1 = normal, 2 = above normal, 3 = well above normal (ordinal from cardio_train)"
         ),
     )
-    glucose_level: GlucoseLevel = Field(
+    gluc_ordinal: GlucOrdinal = Field(
         description=(
-            "1 = normal, 2 = above normal, 3 = well above normal (blood glucose category, ordinal)"
+            "Self-reported tier (1–3) aligned with training column `gluc` (survey ordinal; not mg/dL)"
         ),
     )
     smokes: bool | None = Field(
@@ -88,7 +89,7 @@ class UserProfileOut(BaseModel):
     weight_kg: float | None = None
     gender: Gender | None = None
     cholesterol: int | None = None
-    glucose_level: int | None = None
+    gluc_ordinal: int | None = None
     smokes: bool | None = None
     drinks_alcohol: bool | None = None
     physically_active: bool | None = None

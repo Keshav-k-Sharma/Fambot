@@ -11,7 +11,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from fambot_backend.api.routers import auth, health, users
 
-app = FastAPI(title="Fambot API", version="0.3.0")
+app = FastAPI(title="Fambot API", version="0.4.0")
 
 _origins = os.environ.get("FAMBOT_CORS_ORIGINS", "*").split(",")
 app.add_middleware(

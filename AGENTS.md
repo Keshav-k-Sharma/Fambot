@@ -18,7 +18,7 @@ The repository should remain the **source of truth**; avoid shipping behavior wi
 
 ## Project purpose
 
-**Fambot Backend** is a Python service that:
+**Fambot Backend** is a Python service that scores **cardiovascular** risk from a pipeline trained on `cardio_train.csv`. It is **not** a diabetes-specific or lab-glucose (mg/dL) product; survey ordinals mirror the dataset (e.g. JSON `gluc_ordinal` → feature `gluc`). It:
 
 1. Exposes a **FastAPI** HTTP API with **JWT Bearer** authentication (tokens minted by this service after email/password signup/login against Firebase).
 2. Persists user onboarding and profile fields in **Google Cloud Firestore** (`users/{uid}`).
