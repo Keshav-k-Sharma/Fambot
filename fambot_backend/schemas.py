@@ -5,6 +5,8 @@ from typing import Literal
 
 from pydantic import BaseModel, EmailStr, Field, field_validator
 
+from fambot_backend.cardio_features import Gender
+
 
 class SignupIn(BaseModel):
     email: EmailStr
@@ -33,21 +35,48 @@ class TokenOut(BaseModel):
     email: str | None = None
 
 
+CholesterolLevel = Literal[1, 2, 3]
+GlucoseLevel = Literal[1, 2, 3]
+
+
 class OnboardingIn(BaseModel):
-    age: int = Field(ge=1, le=120)
-    height_cm: float = Field(ge=50, le=260, description="Height in centimeters")
-    weight_kg: float = Field(ge=20, le=400, description="Weight in kilograms")
-    glucose: float = Field(ge=1, le=600, description="Plasma glucose concentration")
-    blood_pressure_diastolic: float = Field(
-        ge=20,
-        le=200,
-        description="Diastolic blood pressure (mm Hg); matches Pima BloodPressure column",
+    """Vitals and survey fields aligned with the cardiovascular training CSV (cardio_train)."""
+
+    age: int = Field(ge=1, le=120, description="Age in years")
+    height_cm: float = Field(ge=120, le=220, description="Height in centimeters")
+    weight_kg: float = Field(ge=35, le=250, description="Weight in kilograms")
+    blood_pressure_systolic: float = Field(
+        ge=80,
+        le=250,
+        description="Systolic blood pressure (mm Hg)",
     )
-    blood_pressure_systolic: float | None = Field(
-        default=None,
+    blood_pressure_diastolic: float = Field(
         ge=40,
-        le=300,
-        description="Optional systolic BP for storage/display",
+        le=150,
+        description="Diastolic blood pressure (mm Hg)",
+    )
+    gender: Gender = Field(description='"female" or "male" (maps to dataset codes 1 / 2)')
+    cholesterol: CholesterolLevel = Field(
+        description=(
+            "1 = normal, 2 = above normal, 3 = well above normal (ordinal from cardio_train)"
+        ),
+    )
+    glucose_level: GlucoseLevel = Field(
+        description=(
+            "1 = normal, 2 = above normal, 3 = well above normal (blood glucose category, ordinal)"
+        ),
+    )
+    smokes: bool | None = Field(
+        default=None,
+        description="Whether the user smokes; omit to impute from training distribution",
+    )
+    drinks_alcohol: bool | None = Field(
+        default=None,
+        description="Whether the user drinks alcohol; omit to impute",
+    )
+    physically_active: bool | None = Field(
+        default=None,
+        description="Whether the user is physically active; omit to impute",
     )
 
 
@@ -57,13 +86,18 @@ class UserProfileOut(BaseModel):
     age: int | None = None
     height_cm: float | None = None
     weight_kg: float | None = None
-    glucose: float | None = None
+    gender: Gender | None = None
+    cholesterol: int | None = None
+    glucose_level: int | None = None
+    smokes: bool | None = None
+    drinks_alcohol: bool | None = None
+    physically_active: bool | None = None
     blood_pressure_systolic: float | None = None
     blood_pressure_diastolic: float | None = None
     bmi: float | None = None
     risk_score: float | None = Field(
         default=None,
-        description="0–100 probability-style score from the diabetes risk model",
+        description="0–100 score from cardiovascular risk model (positive-class probability × 100)",
     )
     risk_class: Literal["low", "moderate", "high"] | None = None
     onboarding_complete: bool = False
@@ -77,7 +111,7 @@ class OnboardingOut(BaseModel):
 
 
 class RiskOut(BaseModel):
-    """Stored diabetes risk from the last successful onboarding (Firestore)."""
+    """Stored cardiovascular risk from the last successful onboarding (Firestore)."""
 
     risk_score: float
     risk_class: Literal["low", "moderate", "high"]

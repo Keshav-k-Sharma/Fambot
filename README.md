@@ -1,10 +1,12 @@
 # Fambot Backend
 
-HTTP API for user onboarding and **diabetes risk scoring** using a trained scikit-learn / XGBoost pipeline. Clients authenticate with **JWT access tokens** issued by this API after **email/password signup and login**; accounts live in **Firebase Authentication** (server-side Admin SDK + Identity Toolkit), and profiles are stored in **Cloud Firestore**.
+HTTP API for user onboarding and **cardiovascular risk scoring** using a trained scikit-learn / XGBoost (or HistGradientBoosting) pipeline. Clients authenticate with **JWT access tokens** issued by this API after **email/password signup and login**; accounts live in **Firebase Authentication** (server-side Admin SDK + Identity Toolkit), and profiles are stored in **Cloud Firestore**.
 
-This repository is both a **batch training script** (builds `diabetes_model.pkl` from the Pima Indians diabetes dataset) and a **FastAPI** service that serves predictions and persists onboarding data.
+This repository is both a **batch training script** (builds `cardiovascular_model.pkl` from [`sources/cardio_train.csv`](sources/cardio_train.csv)) and a **FastAPI** service that serves predictions and persists onboarding data.
 
 **Breaking change:** HTTP routes no longer use a `/v1/` prefix. Clients must call `/auth/…`, `/me/…`, and `/health` directly (for example `POST /auth/login` instead of `POST /v1/auth/login`).
+
+**API 0.3.0:** `PUT /me/onboarding` request body uses cardiovascular-aligned fields (gender, BP systolic/diastolic, cholesterol/glucose ordinals, optional lifestyle flags). See [Onboarding](#put-meonboarding) below.
 
 ---
 
@@ -17,6 +19,7 @@ This repository is both a **batch training script** (builds `diabetes_model.pkl`
 - **Onboarding completion** (`PUT /me/onboarding`) that:
   - Validates body fields with Pydantic.
   - Computes BMI from height and weight.
+  - Builds a feature row matching the trained pipeline (including derived BMI, pulse pressure, MAP proxy).
   - Runs the ML pipeline to produce a **risk score** (0–100, from the positive-class probability) and **risk class** (`low` / `moderate` / `high`).
   - Merges the result into the user’s Firestore document.
 
@@ -40,17 +43,18 @@ This repository is both a **batch training script** (builds `diabetes_model.pkl`
 | Path | Role |
 |------|------|
 | [`fambot_backend/app.py`](fambot_backend/app.py) | FastAPI app factory, CORS, router includes, `run()` for Uvicorn. |
+| [`fambot_backend/cardio_features.py`](fambot_backend/cardio_features.py) | Shared `FEATURE_ORDER`, gender mapping, `build_feature_frame` for inference (must match training). |
 | [`fambot_backend/api/routers/`](fambot_backend/api/routers/) | HTTP route modules (`health`, `auth`, `me`). |
 | [`fambot_backend/schemas.py`](fambot_backend/schemas.py) | Pydantic request/response models. |
 | [`fambot_backend/core/deps.py`](fambot_backend/core/deps.py) | JWT Bearer verification → `uid`. |
 | [`fambot_backend/core/jwt_tokens.py`](fambot_backend/core/jwt_tokens.py) | Mint and verify HS256 access tokens. |
 | [`fambot_backend/core/firebase_init.py`](fambot_backend/core/firebase_init.py) | One-time `firebase_admin` initialization (ADC). |
-| [`fambot_backend/services/inference.py`](fambot_backend/services/inference.py) | Model load, BMI, feature row construction, `predict_risk`. |
+| [`fambot_backend/services/inference.py`](fambot_backend/services/inference.py) | `MODEL_PATH`, joblib load, `predict_risk`. |
 | [`fambot_backend/services/identity_toolkit.py`](fambot_backend/services/identity_toolkit.py) | Identity Toolkit `signInWithPassword` (login). |
 | [`fambot_backend/services/firestore_users.py`](fambot_backend/services/firestore_users.py) | Firestore read/write for `users` collection. |
-| [`model.py`](model.py) | Training: logistic regression vs XGBoost, saves `diabetes_model.pkl` and `feature_importance.png`. |
-| [`sources/diabetes.csv`](sources/diabetes.csv) | Training data (Pima Indians diabetes CSV). |
-| [`diabetes_model.pkl`](diabetes_model.pkl) | Serialized **champion** pipeline (generated; may be gitignored). |
+| [`model.py`](model.py) | Training: LR vs XGB vs HistGradientBoosting; saves `cardiovascular_model.pkl`, `cardiovascular_model.threshold.json`, `feature_importance.png`. |
+| [`sources/cardio_train.csv`](sources/cardio_train.csv) | Training data (semicolon-separated). |
+| [`cardiovascular_model.pkl`](cardiovascular_model.pkl) | Serialized **champion** pipeline (generated; gitignored). |
 
 ---
 
@@ -59,15 +63,17 @@ This repository is both a **batch training script** (builds `diabetes_model.pkl`
 ```bash
 cd fambot-backend
 uv sync
+cp .env.example .env
+# Edit `.env`: set Firebase project ID, Web API key, path to `firebase-admin.json`, and `FAMBOT_JWT_SECRET`.
 ```
 
-Installs the package and dependencies from `pyproject.toml`.
+Installs the package and dependencies from `pyproject.toml`. At runtime, [`fambot_backend/app.py`](fambot_backend/app.py) loads variables from a **`.env`** file in the project root (via `python-dotenv`) if present.
 
 ---
 
 ## Train the model
 
-Training compares **logistic regression** (with scaling) and **XGBoost** (random search), picks the better **5-fold CV ROC-AUC**, then saves the winning **full sklearn `Pipeline`** with `joblib`.
+Training compares **logistic regression**, **XGBoost** (random search), and **HistGradientBoostingClassifier** (random search), picks the best **5-fold CV ROC-AUC**, then saves the winning **full sklearn `Pipeline`** with `joblib`.
 
 ```bash
 uv run model
@@ -75,10 +81,9 @@ uv run model
 
 Artifacts (by default next to the project root):
 
-- `diabetes_model.pkl` — required at API runtime unless `MODEL_PATH` overrides the location.
+- `cardiovascular_model.pkl` — required at API runtime unless `MODEL_PATH` overrides the location.
+- `cardiovascular_model.threshold.json` — optional training metadata (e.g. OOF threshold); not required for serving the 0–100 score.
 - `feature_importance.png` — bar chart of importances or coefficient magnitudes.
-
-The training script treats zeros in `Glucose`, `BloodPressure`, `SkinThickness`, `Insulin`, and `BMI` as missing in the preprocessing branch used for those columns (Pima-style sentinel zeros).
 
 ---
 
@@ -106,7 +111,7 @@ Interactive docs (when the server is up):
 |----------|---------|
 | `HOST` | Bind address for Uvicorn (default `0.0.0.0`). |
 | `PORT` | Listen port (default `8000`). |
-| `MODEL_PATH` | Optional absolute or relative path to `diabetes_model.pkl`. Defaults to repo-root `diabetes_model.pkl`. |
+| `MODEL_PATH` | Optional absolute or relative path to `cardiovascular_model.pkl`. Defaults to repo-root `cardiovascular_model.pkl`. |
 | `FIREBASE_PROJECT_ID` | Firebase/GCP project ID passed into `firebase_admin.initialize_app`. |
 | `GOOGLE_CLOUD_PROJECT` | Alternative to `FIREBASE_PROJECT_ID` for the same purpose. |
 | `GOOGLE_APPLICATION_CREDENTIALS` | Path to service account JSON for ADC (typical for local dev). |
@@ -139,7 +144,7 @@ Do **not** set `FAMBOT_SKIP_AUTH` or `FAMBOT_SKIP_FIRESTORE` in production.
 ### 2. Render service
 
 - **Connect** this Git repository to Render and **apply** the Blueprint from [`render.yaml`](render.yaml), or create a **Web Service** manually with the same settings.
-- **Build command:** `uv sync && uv run model` (installs deps and generates `diabetes_model.pkl` in the slug; it is gitignored but required at runtime).
+- **Build command:** `uv sync && uv run model` (installs deps and generates `cardiovascular_model.pkl` in the slug; it is gitignored but required at runtime).
 - **Start command:** `bash scripts/render_start.sh` (writes `GOOGLE_SERVICE_ACCOUNT_JSON` to `/tmp/gcp-sa.json`, sets `GOOGLE_APPLICATION_CREDENTIALS`, runs `uv run api`).
 - **Health check path:** `/health`.
 - **Environment:** set `PYTHON_VERSION` to `3.14` if not inherited from [`.python-version`](.python-version). Set the secrets marked `sync: false` in [`render.yaml`](render.yaml) in the dashboard when prompted.
@@ -199,7 +204,7 @@ Returns the current user’s profile from Firestore, or an empty-ish profile if 
 
 **Auth:** Same as `GET /me` (`Authorization: Bearer <JWT access token>`).
 
-Returns the **stored** diabetes risk from Firestore (`riskScore` / `riskClass` written when onboarding completed). Does not run the ML model.
+Returns the **stored** cardiovascular risk from Firestore (`riskScore` / `riskClass` written when onboarding completed). Does not run the ML model.
 
 **Response** (`RiskOut`): `risk_score` (0–100) and `risk_class` (`low` \| `moderate` \| `high`).
 
@@ -209,18 +214,23 @@ Returns the **stored** diabetes risk from Firestore (`riskScore` / `riskClass` w
 
 **Auth:** Same as above (`Bearer` JWT).
 
-**Errors:** Same authentication errors as `GET /me`.
+**Errors:** Same authentication errors as `GET /me`. **`422`** if validation fails (e.g. systolic BP not greater than diastolic).
 
 **JSON body** (`OnboardingIn`):
 
 | Field | Type | Notes |
 |-------|------|--------|
-| `age` | int | 1–120 |
-| `height_cm` | float | 50–260 |
-| `weight_kg` | float | 20–400 |
-| `glucose` | float | 1–600 |
-| `blood_pressure_diastolic` | float | 20–200; mapped to model feature **BloodPressure** (Pima column is diastolic-like). |
-| `blood_pressure_systolic` | float, optional | 40–300; stored in Firestore only. |
+| `age` | int | 1–120 (years) |
+| `height_cm` | float | 120–220 (cm) |
+| `weight_kg` | float | 35–250 (kg) |
+| `blood_pressure_systolic` | float | 80–250 (mm Hg) |
+| `blood_pressure_diastolic` | float | 40–150 (mm Hg); must be **less than** systolic |
+| `gender` | `"female"` \| `"male"` | Maps to dataset codes 1 / 2 |
+| `cholesterol` | 1, 2, or 3 | Ordinal: 1 = normal, 2 = above normal, 3 = well above normal |
+| `glucose_level` | 1, 2, or 3 | Blood glucose category (same ordinal scale as training data) |
+| `smokes` | bool or omit | Omit to let the model impute from training distribution |
+| `drinks_alcohol` | bool or omit | Omit to impute |
+| `physically_active` | bool or omit | Omit to impute |
 
 **Response** (`OnboardingOut`): includes updated `profile`, `risk_score` (0–100), and `risk_class`.
 
@@ -244,9 +254,14 @@ Fields (camelCase in Firestore):
 | `age` | User age |
 | `heightCm` | Height (cm) |
 | `weightKg` | Weight (kg) |
-| `glucose` | Plasma glucose |
-| `bloodPressureDiastolic` | Diastolic BP |
-| `bloodPressureSystolic` | Systolic BP (optional) |
+| `gender` | `"female"` or `"male"` |
+| `cholesterol` | 1, 2, or 3 |
+| `glucoseLevel` | 1, 2, or 3 |
+| `smokes` | Boolean or null |
+| `drinksAlcohol` | Boolean or null |
+| `physicallyActive` | Boolean or null |
+| `bloodPressureSystolic` | Systolic BP (mm Hg) |
+| `bloodPressureDiastolic` | Diastolic BP (mm Hg) |
 | `bmi` | Computed BMI |
 | `riskScore` | 0–100 |
 | `riskClass` | `"low"` \| `"moderate"` \| `"high"` |
@@ -259,12 +274,10 @@ Reads map these back into **snake_case** JSON in `UserProfileOut`.
 
 ## Inference and the ML pipeline
 
-- The API builds a **single-row DataFrame** with columns in this order:  
-  `Pregnancies`, `Glucose`, `BloodPressure`, `SkinThickness`, `Insulin`, `BMI`, `DiabetesPedigreeFunction`, `Age`.
-- **Pregnancies** is always `0` in the current onboarding flow (no pregnancy field in the API).
-- **BloodPressure** uses **diastolic** from the request.
-- **SkinThickness**, **Insulin**, and **DiabetesPedigreeFunction** are filled from **medians of the training CSV** (with zeros→NaN for the first two before median), cached in process.
-- **BMI** is computed from `height_cm` and `weight_kg`, not taken from the user as a raw field.
+- Feature names and order are defined once in [`fambot_backend/cardio_features.py`](fambot_backend/cardio_features.py) (`FEATURE_ORDER`) and must match the columns saved in `cardiovascular_model.pkl`.
+- The API builds a **single-row DataFrame** with: `age_years`, `gender`, `height`, `weight`, `ap_hi`, `ap_lo`, `cholesterol`, `gluc`, `smoke`, `alco`, `active`, plus derived `bmi`, `pulse_pressure`, `map_approx`.
+- Optional lifestyle fields omitted from JSON are passed as **missing values** and imputed by the **fitted `SimpleImputer`** inside the saved pipeline (trained on `cardio_train.csv`).
+- **BMI** is computed from `height_cm` and `weight_kg` for both persistence and the feature row.
 
 The loaded object must be a sklearn estimator with `predict_proba` when possible; the positive class probability is scaled to 0–100.
 

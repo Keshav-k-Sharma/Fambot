@@ -40,7 +40,10 @@ def complete_onboarding(
     body: OnboardingIn,
     uid: str = Depends(firebase_uid),
 ) -> OnboardingOut:
-    score, rclass = predict_risk(body)
+    try:
+        score, rclass = predict_risk(body)
+    except ValueError as e:
+        raise HTTPException(status_code=422, detail=str(e)) from e
     bmi = compute_bmi(body.height_cm, body.weight_kg)
     profile = upsert_onboarding(uid, body, bmi, score, rclass)
     return OnboardingOut(profile=profile, risk_score=score, risk_class=rclass)

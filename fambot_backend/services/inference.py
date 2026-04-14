@@ -6,44 +6,17 @@ from pathlib import Path
 from typing import Literal
 
 import joblib
-import numpy as np
-import pandas as pd
 
+from fambot_backend.cardio_features import build_feature_frame
 from fambot_backend.schemas import OnboardingIn
 
 _ROOT = Path(__file__).resolve().parents[2]
-_DATA_CSV = _ROOT / "sources" / "diabetes.csv"
-_DEFAULT_MODEL_PATH = _ROOT / "diabetes_model.pkl"
-
-FEATURE_ORDER: list[str] = [
-    "Pregnancies",
-    "Glucose",
-    "BloodPressure",
-    "SkinThickness",
-    "Insulin",
-    "BMI",
-    "DiabetesPedigreeFunction",
-    "Age",
-]
+_DEFAULT_MODEL_PATH = _ROOT / "cardiovascular_model.pkl"
 
 
 def _model_path() -> Path:
     raw = os.environ.get("MODEL_PATH")
     return Path(raw).expanduser() if raw else _DEFAULT_MODEL_PATH
-
-
-@lru_cache(maxsize=1)
-def _training_medians() -> dict[str, float]:
-    df = pd.read_csv(_DATA_CSV)
-    cols = ["SkinThickness", "Insulin", "BMI"]
-    for col in cols:
-        df[col] = df[col].replace(0, np.nan)
-        df[col] = df[col].fillna(df[col].median())
-    medians: dict[str, float] = {}
-    for name in FEATURE_ORDER:
-        if name in df.columns:
-            medians[name] = float(df[name].median())
-    return medians
 
 
 @lru_cache(maxsize=1)
@@ -70,20 +43,21 @@ def _risk_class(score: float) -> Literal["low", "moderate", "high"]:
 
 
 def predict_risk(payload: OnboardingIn) -> tuple[float, Literal["low", "moderate", "high"]]:
-    """Return risk score 0–100 and class from the XGBoost model's positive-class probability."""
-    med = _training_medians()
-    bmi = compute_bmi(payload.height_cm, payload.weight_kg)
-    row = {
-        "Pregnancies": 0.0,
-        "Glucose": float(payload.glucose),
-        "BloodPressure": float(payload.blood_pressure_diastolic),
-        "SkinThickness": med.get("SkinThickness", 29.0),
-        "Insulin": med.get("Insulin", 80.0),
-        "BMI": bmi,
-        "DiabetesPedigreeFunction": med.get("DiabetesPedigreeFunction", 0.5),
-        "Age": float(payload.age),
-    }
-    X = pd.DataFrame([row], columns=FEATURE_ORDER)
+    """Return risk score 0–100 and class from the pipeline's positive-class probability."""
+    X = build_feature_frame(
+        age=payload.age,
+        height_cm=payload.height_cm,
+        weight_kg=payload.weight_kg,
+        blood_pressure_systolic=payload.blood_pressure_systolic,
+        blood_pressure_diastolic=payload.blood_pressure_diastolic,
+        gender=payload.gender,
+        cholesterol=payload.cholesterol,
+        glucose_level=payload.glucose_level,
+        smokes=payload.smokes,
+        drinks_alcohol=payload.drinks_alcohol,
+        physically_active=payload.physically_active,
+    )
+
     model = _load_model()
     if not hasattr(model, "predict_proba"):
         pred = float(model.predict(X)[0])

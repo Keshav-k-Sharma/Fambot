@@ -6,6 +6,7 @@ from typing import Any, Literal
 
 from firebase_admin import firestore
 
+from fambot_backend.cardio_features import Gender
 from fambot_backend.core.firebase_init import init_firebase
 from fambot_backend.schemas import OnboardingIn, UserProfileOut
 
@@ -13,6 +14,14 @@ from fambot_backend.schemas import OnboardingIn, UserProfileOut
 def _db():
     init_firebase()
     return firestore.client()
+
+
+def _parse_gender(raw: Any) -> Gender | None:
+    if raw is None:
+        return None
+    if isinstance(raw, str) and raw in ("female", "male"):
+        return Gender(raw)
+    return None
 
 
 def _doc_to_profile(uid: str, data: dict[str, Any] | None) -> UserProfileOut:
@@ -28,7 +37,12 @@ def _doc_to_profile(uid: str, data: dict[str, Any] | None) -> UserProfileOut:
         age=data.get("age"),
         height_cm=data.get("heightCm"),
         weight_kg=data.get("weightKg"),
-        glucose=data.get("glucose"),
+        gender=_parse_gender(data.get("gender")),
+        cholesterol=data.get("cholesterol"),
+        glucose_level=data.get("glucoseLevel"),
+        smokes=data.get("smokes"),
+        drinks_alcohol=data.get("drinksAlcohol"),
+        physically_active=data.get("physicallyActive"),
         blood_pressure_systolic=data.get("bloodPressureSystolic"),
         blood_pressure_diastolic=data.get("bloodPressureDiastolic"),
         bmi=data.get("bmi"),
@@ -73,7 +87,12 @@ def upsert_onboarding(
             age=payload.age,
             height_cm=payload.height_cm,
             weight_kg=payload.weight_kg,
-            glucose=payload.glucose,
+            gender=payload.gender,
+            cholesterol=payload.cholesterol,
+            glucose_level=payload.glucose_level,
+            smokes=payload.smokes,
+            drinks_alcohol=payload.drinks_alcohol,
+            physically_active=payload.physically_active,
             blood_pressure_systolic=payload.blood_pressure_systolic,
             blood_pressure_diastolic=payload.blood_pressure_diastolic,
             bmi=bmi,
@@ -88,9 +107,14 @@ def upsert_onboarding(
         "age": payload.age,
         "heightCm": payload.height_cm,
         "weightKg": payload.weight_kg,
-        "glucose": payload.glucose,
-        "bloodPressureDiastolic": payload.blood_pressure_diastolic,
+        "gender": payload.gender.value,
+        "cholesterol": payload.cholesterol,
+        "glucoseLevel": payload.glucose_level,
+        "smokes": payload.smokes,
+        "drinksAlcohol": payload.drinks_alcohol,
+        "physicallyActive": payload.physically_active,
         "bloodPressureSystolic": payload.blood_pressure_systolic,
+        "bloodPressureDiastolic": payload.blood_pressure_diastolic,
         "bmi": bmi,
         "riskScore": risk_score,
         "riskClass": risk_class,
