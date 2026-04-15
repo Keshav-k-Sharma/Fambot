@@ -116,3 +116,72 @@ class RiskOut(BaseModel):
 
     risk_score: float
     risk_class: Literal["low", "moderate", "high"]
+
+
+# --- Family group / invitations (v1) ---
+
+FamilyRole = Literal[
+    "mother",
+    "father",
+    "son",
+    "daughter",
+    "brother",
+    "sister",
+    "uncle",
+    "aunt",
+    "nephew",
+    "niece",
+    "husband",
+    "wife",
+]
+
+
+class CreateFamilyInviteIn(BaseModel):
+    """Role of the invitee relative to the group owner (how the owner describes the person joining)."""
+
+    target_role: FamilyRole = Field(
+        description="Family role label for the invitee from the owner's perspective.",
+    )
+
+
+class FamilyInviteCreatedOut(BaseModel):
+    """Single-use invite with QR payload for display."""
+
+    token: str = Field(description="Secret token; embedded in invite_url and consumed on accept.")
+    invite_url: str = Field(description="URL the client opens or encodes in QR (includes token).")
+    expires_at: datetime = Field(description="UTC expiry after which the invite cannot be used.")
+    qr_png_base64: str = Field(description="PNG image bytes, base64-encoded (no data: prefix).")
+    qr_media_type: str = Field(default="image/png", description="MIME type for qr_png_base64.")
+    target_role: FamilyRole
+
+
+class AcceptFamilyInviteIn(BaseModel):
+    token: str = Field(min_length=8, description="Invite token from create response or invite_url.")
+
+
+class FamilyMemberOut(BaseModel):
+    uid: str
+    display_name: str | None = None
+    role_relative_to_me: FamilyRole | None = Field(
+        default=None,
+        description=(
+            "How this member is labeled relative to the current user when an edge exists; "
+            "null if not modeled (e.g. peer members without a stored relationship yet)."
+        ),
+    )
+
+
+class FamilyGroupOut(BaseModel):
+    group_id: str
+    owner_uid: str
+    members: list[FamilyMemberOut]
+
+
+class AcceptFamilyInviteOut(BaseModel):
+    group_id: str
+    family: FamilyGroupOut
+
+
+class RemoveFamilyMemberOut(BaseModel):
+    removed_uid: str
+    group_id: str

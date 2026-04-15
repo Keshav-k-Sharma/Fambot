@@ -6,7 +6,7 @@ This repository is both a **batch training script** (builds `cardiovascular_mode
 
 **Breaking change:** HTTP routes no longer use a `/v1/` prefix. Clients must call `/auth/…`, `/me/…`, and `/health` directly (for example `POST /auth/login` instead of `POST /v1/auth/login`).
 
-**API 0.4.0:** `PUT /me/onboarding` uses cardiovascular-aligned fields (gender, BP, cholesterol and **`gluc_ordinal`** survey tiers, optional lifestyle flags). See [Onboarding](#put-meonboarding) below.
+**API 0.5.0:** Family invitations (`/me/family/…`) with single-use expiring links, QR PNG (base64), and perspective-aware relationship labels. **API 0.4.0** onboarding: `PUT /me/onboarding` uses cardiovascular-aligned fields (gender, BP, cholesterol and **`gluc_ordinal`** survey tiers, optional lifestyle flags). See [Onboarding](#put-meonboarding) below.
 
 ---
 
@@ -22,6 +22,7 @@ This repository is both a **batch training script** (builds `cardiovascular_mode
   - Builds a feature row matching the trained pipeline (including derived BMI, pulse pressure, MAP proxy).
   - Runs the ML pipeline to produce a **risk score** (0–100, from the positive-class probability) and **risk class** (`low` / `moderate` / `high`).
   - Merges the result into the user’s Firestore document.
+- **Family group (v1)** (`/me/family/…`): group owner creates **single-use** invite links (24h TTL by default) with optional deep-link base URL; response includes **QR code** as base64 PNG. Invitees (existing accounts) **accept** while authenticated; reciprocal relationship labels use a fixed vocabulary and gender-aware mapping. Owner can **remove** members. Each user belongs to **at most one** family group.
 
 ---
 
@@ -44,7 +45,7 @@ This repository is both a **batch training script** (builds `cardiovascular_mode
 |------|------|
 | [`fambot_backend/app.py`](fambot_backend/app.py) | FastAPI app factory, CORS, router includes, `run()` for Uvicorn. |
 | [`fambot_backend/cardio_features.py`](fambot_backend/cardio_features.py) | Shared `FEATURE_ORDER`, gender mapping, `build_feature_frame` for inference (must match training). |
-| [`fambot_backend/api/routers/`](fambot_backend/api/routers/) | HTTP route modules (`health`, `auth`, `me`). |
+| [`fambot_backend/api/routers/`](fambot_backend/api/routers/) | HTTP route modules (`health`, `auth`, `me`, `invitations` → `/me/family`). |
 | [`fambot_backend/schemas.py`](fambot_backend/schemas.py) | Pydantic request/response models. |
 | [`fambot_backend/core/deps.py`](fambot_backend/core/deps.py) | JWT Bearer verification → `uid`. |
 | [`fambot_backend/core/jwt_tokens.py`](fambot_backend/core/jwt_tokens.py) | Mint and verify HS256 access tokens. |
@@ -116,6 +117,8 @@ Interactive docs (when the server is up):
 | `GOOGLE_CLOUD_PROJECT` | Alternative to `FIREBASE_PROJECT_ID` for the same purpose. |
 | `GOOGLE_APPLICATION_CREDENTIALS` | Path to service account JSON for ADC (typical for local dev). |
 | `FAMBOT_CORS_ORIGINS` | Comma-separated list of allowed origins for CORS. Default `*` (single origin string `*` in the list). Strip whitespace around entries. |
+| `FAMBOT_FAMILY_INVITE_TTL_SECONDS` | Family invite token lifetime (default `86400` = 24h; clamped between 60s and 30 days). |
+| `FAMBOT_INVITE_BASE_URL` | Optional URL prefix for invite links and QR payloads (e.g. `https://app.example.com/join`). If unset, invite URLs use the `fambot://family-invite?token=…` scheme. |
 | `FAMBOT_SKIP_AUTH` | Set to `1` to **skip JWT verification** (local only; **never** in production). When set, the resolved user id comes from `FAMBOT_DEV_UID`. |
 | `FAMBOT_DEV_UID` | Fake Firebase `uid` used when `FAMBOT_SKIP_AUTH=1` (default `dev-user`). |
 | `FAMBOT_SKIP_FIRESTORE` | Set to `1` to skip Firestore reads/writes (returns synthetic profile data for onboarding). |
@@ -242,6 +245,58 @@ Returns the **stored** cardiovascular risk from Firestore (`riskScore` / `riskCl
 
 ---
 
+### `POST /me/family/invitations`
+
+**Auth:** `Authorization: Bearer <JWT>`.
+
+**JSON body** (`CreateFamilyInviteIn`):
+
+| Field | Type | Notes |
+|-------|------|--------|
+| `target_role` | string | How you describe the person you are inviting (fixed vocabulary: `mother`, `father`, `son`, `daughter`, `brother`, `sister`, `uncle`, `aunt`, `nephew`, `niece`, `husband`, `wife`). |
+
+Only the **group owner** can create invites. The first successful create also creates the family group and adds you as owner.
+
+**Response** (`FamilyInviteCreatedOut`): `token`, `invite_url`, `expires_at` (UTC), `qr_png_base64` (PNG bytes, base64-encoded), `qr_media_type`, `target_role`.
+
+**Errors:** `403` if you are not the owner of your family group; `401` if not authenticated.
+
+### `POST /me/family/invitations/accept`
+
+**Auth:** `Authorization: Bearer <JWT>` (invitees must already have an account and be logged in).
+
+**JSON body** (`AcceptFamilyInviteIn`):
+
+| Field | Type | Notes |
+|-------|------|--------|
+| `token` | string | Secret token from `POST /me/family/invitations` or parsed from `invite_url`. |
+
+Consumes the invite (single-use), joins the owner’s group, and creates reciprocal relationship edges. If you already belong to another group, you are **removed** from the old group and its relationship edges for you are deleted.
+
+**Response** (`AcceptFamilyInviteOut`): `group_id`, `family` (`FamilyGroupOut`).
+
+**Errors:** `404` invite not found; `410` expired; `409` already used, already in this group, or you **own** a family group (owners cannot join another group in v1); `400` cannot accept your own invite; `401` if not authenticated.
+
+### `GET /me/family`
+
+**Auth:** `Authorization: Bearer <JWT>`.
+
+Returns your current family group, owner id, and **other** members with `role_relative_to_me` when a directed relationship edge exists (may be `null` for pairs not yet modeled).
+
+**Errors:** `404` if you are not in any group; `401` if not authenticated.
+
+### `DELETE /me/family/members/{member_uid}`
+
+**Auth:** `Authorization: Bearer <JWT>`.
+
+**Owner only:** removes a member from the group (cannot remove yourself or the owner). Deletes that member’s `users/{uid}` `familyGroupId` pointer and their relationship edges in the group.
+
+**Response** (`RemoveFamilyMemberOut`): `removed_uid`, `group_id`.
+
+**Errors:** `403` if not owner or if trying to remove the owner; `404` if not in a group or member missing; `401` if not authenticated.
+
+---
+
 ## Firestore schema
 
 Collection: **`users`**, document ID: **Firebase `uid`**.
@@ -267,8 +322,18 @@ Fields (camelCase in Firestore):
 | `riskClass` | `"low"` \| `"moderate"` \| `"high"` |
 | `onboardingComplete` | `true` after successful PUT |
 | `updatedAt` | Server timestamp (UTC) |
+| `familyGroupId` | Optional string; id of the `familyGroups` document this user belongs to |
 
 Reads map these back into **snake_case** JSON in `UserProfileOut`.
+
+**Family data (additional collections):**
+
+| Collection | Purpose |
+|------------|---------|
+| `familyGroups/{groupId}` | `ownerUid`, `createdAt`, `updatedAt` |
+| `familyGroups/{groupId}/members/{uid}` | `joinedAt` |
+| `familyGroups/{groupId}/relationships/{fromUid}__{toUid}` | `fromUid`, `toUid`, `role`, `createdAt` |
+| `familyInvites/{token}` | `groupId`, `ownerUid`, `targetRole`, `expiresAt`, `consumedAt`, `consumedByUid` |
 
 ---
 

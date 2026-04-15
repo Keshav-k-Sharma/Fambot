@@ -73,6 +73,29 @@ def get_user_profile(uid: str) -> UserProfileOut:
     return _doc_to_profile(uid, snap.to_dict())
 
 
+def get_user_family_group_id(uid: str) -> str | None:
+    """Read optional `familyGroupId` on `users/{uid}` (camelCase in Firestore)."""
+    if os.environ.get("FAMBOT_SKIP_FIRESTORE") == "1":
+        return None
+    snap = _db().collection("users").document(uid).get()
+    data = snap.to_dict()
+    if not data:
+        return None
+    raw = data.get("familyGroupId")
+    return raw if isinstance(raw, str) and raw else None
+
+
+def set_user_family_group_id(uid: str, family_group_id: str | None) -> None:
+    """Set or clear `familyGroupId` on the user document."""
+    if os.environ.get("FAMBOT_SKIP_FIRESTORE") == "1":
+        return
+    ref = _db().collection("users").document(uid)
+    if family_group_id is None:
+        ref.set({"familyGroupId": firestore.DELETE_FIELD}, merge=True)
+    else:
+        ref.set({"familyGroupId": family_group_id}, merge=True)
+
+
 def upsert_onboarding(
     uid: str,
     payload: OnboardingIn,

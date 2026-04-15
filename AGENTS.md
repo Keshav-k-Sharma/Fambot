@@ -24,7 +24,7 @@ The repository should remain the **source of truth**; avoid shipping behavior wi
 2. Persists user onboarding and profile fields in **Google Cloud Firestore** (`users/{uid}`).
 3. Loads a **joblib-serialized sklearn Pipeline** (`cardiovascular_model.pkl`) trained from `model.py` on `sources/cardio_train.csv`, and converts onboarding input into a feature row compatible with that pipeline (see `fambot_backend/cardio_features.py`).
 
-Agents should preserve the separation between **training** (`model.py`), **HTTP layer** (`fambot_backend/app.py` and `fambot_backend/api/routers/`), **inference** (`fambot_backend/services/inference.py`), and **persistence** (`fambot_backend/services/firestore_users.py`).
+Agents should preserve the separation between **training** (`model.py`), **HTTP layer** (`fambot_backend/app.py` and `fambot_backend/api/routers/`), **inference** (`fambot_backend/services/inference.py`), **persistence** (`fambot_backend/services/firestore_users.py`), and **family/invites** (`fambot_backend/services/family_invites.py`, `fambot_backend/services/family_roles.py`).
 
 ---
 
@@ -56,7 +56,7 @@ fambot_backend/
   app.py                    # FastAPI app, CORS, include_router, uvicorn runner
   cardio_features.py        # FEATURE_ORDER shared with model.py; build_feature_frame
   schemas.py                # Pydantic models (API JSON shape)
-  api/routers/              # health, auth, users (HTTP surface)
+  api/routers/              # health, auth, users, invitations (/me/family)
   core/
     deps.py                 # HTTPBearer → JWT → firebase_uid (Firebase Auth uid string)
     jwt_tokens.py           # Mint / verify access tokens (FAMBOT_JWT_SECRET)
@@ -64,7 +64,9 @@ fambot_backend/
   services/
     inference.py            # MODEL_PATH, joblib load, predict_risk
     identity_toolkit.py     # signInWithPassword for POST /auth/login
-    firestore_users.py      # get_user_profile, upsert_onboarding, ensure_user_document
+    firestore_users.py      # get_user_profile, upsert_onboarding, ensure_user_document, familyGroupId helpers
+    family_invites.py       # family groups, invites, QR payload, accept/remove flows
+    family_roles.py         # reciprocal family role mapping (vocabulary)
 model.py                    # Offline training; LR vs XGB vs HistGradientBoosting; saves champion
 sources/cardio_train.csv    # Training data (semicolon-separated)
 render.yaml                 # Render Blueprint (build/start, env var names)
@@ -94,6 +96,8 @@ Production on **Render** is documented in **[`README.md`](README.md)** (Firebase
 | `FAMBOT_JWT_EXPIRES_SECONDS` | Access token TTL (defaults documented in `core/jwt_tokens.py` / README). |
 | `FIREBASE_WEB_API_KEY` | Required for `POST /auth/login` (Identity Toolkit). |
 | `FAMBOT_CORS_ORIGINS` | Comma-separated origins; default allows `*`. |
+| `FAMBOT_FAMILY_INVITE_TTL_SECONDS` | Family invite token TTL (default 86400; clamped 60–2592000). |
+| `FAMBOT_INVITE_BASE_URL` | Optional prefix for invite URLs embedded in QR codes; if unset, `fambot://family-invite?token=…` is used. |
 
 When adding tests or local scripts, prefer `FAMBOT_SKIP_*` flags over mocking unless the test specifically targets Firebase.
 
@@ -169,6 +173,7 @@ Configured in `app.py` via `FAMBOT_CORS_ORIGINS` (comma-separated). Default is p
 | New endpoint | `api/routers/`, `app.py` (include router), possibly `schemas.py`; update **README** API section |
 | Change request validation | `schemas.py` |
 | Change Firestore fields | `services/firestore_users.py`, `schemas.py` (read/write models) |
+| Family invites / roles | `services/family_invites.py`, `services/family_roles.py`, `api/routers/invitations.py`, `schemas.py` |
 | Change model inputs or imputation | `fambot_backend/cardio_features.py`, `services/inference.py`, possibly `model.py` + retrain |
 | Retrain or change algorithms | `model.py` |
 | Auth behavior | `core/deps.py`, `core/jwt_tokens.py`, `services/identity_toolkit.py`, `core/firebase_init.py` |

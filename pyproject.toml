@@ -17,6 +17,7 @@ dependencies = [
     "joblib>=1.4.0",
     "PyJWT>=2.9.0",
     "python-dotenv>=1.2.2",
+    "segno>=1.6.1",
 ]
 
 [project.scripts]
