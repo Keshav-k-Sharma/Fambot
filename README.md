@@ -151,9 +151,9 @@ Interactive docs (when the server is up):
 | `GOOGLE_APPLICATION_CREDENTIALS` | Path to service account JSON for ADC (typical for local dev). |
 | `FAMBOT_CORS_ORIGINS` | Comma-separated list of allowed origins for CORS. Default `*` (single origin string `*` in the list). Strip whitespace around entries. |
 | `FIREBASE_STORAGE_BUCKET` | Firebase Storage bucket name used for report uploads (for example `my-project.appspot.com`). |
-| `GEMINI_API_KEY` | API key for Gemini; required for document analysis (`POST /documents` with `analyze=true`, or `POST /documents/{doc_id}/analyze`) and **chat** (including File Search indexing on upload). |
+| `GEMINI_API_KEY` | API key for Gemini; required for document analysis (`POST /documents` with `analyze=true`, or `POST /documents/{doc_id}/analyze`) and **chat** (including optional File Search indexing on document upload). |
 | `GEMINI_REPORT_MODEL` | Optional Gemini model name (default `gemini-2.5-flash`). |
-| `FAMBOT_GEMINI_DISABLE_FILE_SEARCH` | Set to `1` to **disable** Gemini **File Search** (per-user RAG) in chat and skip indexing uploads into a file store. Omitted: **file search enabled** when Firestore is in use. |
+| `FAMBOT_GEMINI_DISABLE_FILE_SEARCH` | Set to `1` to **disable** Gemini **File Search** store creation and upload indexing. Chat turns use custom function tools instead of attaching built-in File Search because Gemini rejects combining those tool types in one request. |
 | `FAMBOT_STORAGE_MAKE_PUBLIC` | Optional `1` to make uploaded Storage objects public after upload (default private). |
 | `FAMBOT_FAMILY_INVITE_TTL_SECONDS` | Family invite token lifetime (default `86400` = 24h; clamped between 60s and 30 days). |
 | `FAMBOT_INVITE_BASE_URL` | Optional URL prefix for invite links and QR payloads (e.g. `https://app.example.com/join`). If unset, invite URLs use the `fambot://family-invite?token=…` scheme. |
@@ -357,7 +357,7 @@ Lists chat sessions for the authenticated user ordered by `last_updated` descend
 | `file` | file | no | Optional attachment for this turn. |
 | `Idempotency-Key` | header | no | Optional key to dedupe retried turn submissions. |
 
-Sends **user profile + cardiovascular risk** and recent chat history on every turn (no automatic bulk load of all stored documents). The model may use **function tools** (list stored document names, include a file by name, family risk context) and **Gemini File Search** (if the user has a `fileSearchStoreName` and indexing is enabled). **Grounding with Google Search** is not enabled on this path: the Gemini API does not allow combining built-in `google_search` with the same request’s custom function tools. The optional `file` field is for a **this-turn** attachment only. Persists user+model turns under `users/{uid}/chats/{chat_id}/messages`, updates `last_updated`, and tracks turn lifecycle state (`queued`, `streaming`, `completed`, `failed`, `cancelled`) under `users/{uid}/chats/{chat_id}/turns`. After the first user message only, chat title is auto-generated with a low-cost title model.
+Sends **user profile + cardiovascular risk** and recent chat history on every turn (no automatic bulk load of all stored documents). The model may use **function tools** (list stored document names, include a file by name, family risk context). Built-in Gemini tools such as `file_search` and `google_search` are not attached to chat turns because Gemini rejects combining built-in tools with custom function declarations in one request. The optional `file` field is for a **this-turn** attachment only. Persists user+model turns under `users/{uid}/chats/{chat_id}/messages`, updates `last_updated`, and tracks turn lifecycle state (`queued`, `streaming`, `completed`, `failed`, `cancelled`) under `users/{uid}/chats/{chat_id}/turns`. After the first user message only, chat title is auto-generated with a low-cost title model.
 
 **Response negotiation (`Accept` header):**
 

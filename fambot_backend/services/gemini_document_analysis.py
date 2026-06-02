@@ -12,9 +12,8 @@ from typing import Any
 from fastapi import HTTPException
 
 from fambot_backend.services.document_storage import get_user_document_payload, list_user_documents
-from fambot_backend.services.firestore_users import get_file_search_store_name, get_user_profile
+from fambot_backend.services.firestore_users import get_user_profile
 from fambot_backend.services.family_invites import family_peers_for_scoring
-from fambot_backend.services.gemini_file_search import file_search_disabled
 
 CHAT_ASSISTANT_FALLBACK = (
     "I wasn't able to generate a response just now. Please try again in a moment."
@@ -51,12 +50,12 @@ CHAT_SYSTEM_INSTRUCTION = dedent(
         ## Context and tools
         - Each user message includes **USER_PROFILE_AND_RISK** and **CHAT_HISTORY**: treat the profile
           block as your **baseline**; don’t ignore it unless the user overrides it for the turn.
-        - When document detail matters, **use tools** before guessing: **list** stored document names,
-          **include** a specific file by exact name, use **family risk context** when shared lifestyle
-          matters, and use **File Search** when available for indexed documents.
+        - When document detail matters, **use function tools** before guessing: **list** stored
+          document names, **include** a specific file by exact name, and use **family risk context**
+          when shared lifestyle matters.
         - **Never claim** you saw a document or value you did not retrieve via tools or attachment.
-        - In this chat path you **do not** have live web search; rely on profile, tools, File Search,
-          and general evidence-based guidance.
+        - In this chat path you **do not** have live web search; rely on profile, function tools,
+          uploaded attachments, and general evidence-based guidance.
 
         ## Style details
         - Prefer **short paragraphs** (1–3 sentences each). Use bullets **only** when listing steps,
@@ -252,8 +251,7 @@ def _function_declarations() -> list[Any]:
             name="include_stored_document",
             description=(
                 "Load the contents of a stored user document by its exact `file_name` (from list "
-                "results). The tool attaches the file for the rest of the turn. Prefer the File "
-                "Search tool when the user’s documents are already indexed, unless a specific file is required."
+                "results). The tool attaches the file for the rest of the turn so it can be cited directly."
             ),
             parameters_json_schema={
                 "type": "object",
@@ -272,22 +270,10 @@ def _function_declarations() -> list[Any]:
 def _build_tools_list(uid: str) -> list[Any]:
     from google.genai import types
 
-    out: list[Any] = []
-    # Gemini rejects the same request mixing built-in `google_search` with custom
-    # `function_declarations` (400 INVALID_ARGUMENT). Chat always registers the
-    # latter for documents/family tools, so web grounding is not attached here.
-    store = get_file_search_store_name(uid)
-    if store and not file_search_disabled():
-        out.append(
-            types.Tool(
-                file_search=types.FileSearch(
-                    file_search_store_names=[store],
-                    top_k=8,
-                )
-            )
-        )
-    out.append(types.Tool(function_declarations=_function_declarations()))
-    return out
+    # Gemini rejects requests that combine built-in tools such as `file_search`
+    # with custom `function_declarations`. Chat relies on functions for stored
+    # documents and family context, so keep the request on the function-calling path.
+    return [types.Tool(function_declarations=_function_declarations())]
 
 
 def _citations_from_response(response: Any) -> list[dict[str, Any]] | None:
