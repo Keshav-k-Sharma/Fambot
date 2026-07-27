@@ -24,8 +24,8 @@ def test_put_onboarding_returns_profile_and_risk(
         "blood_pressure_systolic": 125,
         "blood_pressure_diastolic": 82,
         "gender": "female",
-        "cholesterol": 2,
-        "gluc_ordinal": 2,
+        "cholesterol_mg_dl": 220,
+        "glucose_mg_dl": 110,
         "smokes": False,
         "drinks_alcohol": None,
         "physically_active": True,
@@ -37,6 +37,8 @@ def test_put_onboarding_returns_profile_and_risk(
     assert data["profile"]["uid"]
     assert data["profile"]["onboarding_complete"] is True
     assert data["profile"]["gender"] == Gender.female.value
+    assert data["profile"]["cholesterol_mg_dl"] == 220
+    assert data["profile"]["glucose_mg_dl"] == 110
 
 
 @pytest.mark.api
@@ -50,8 +52,8 @@ def test_put_onboarding_invalid_bp(client: TestClient, dry_api_env: None) -> Non
             "blood_pressure_systolic": 100,
             "blood_pressure_diastolic": 110,
             "gender": "male",
-            "cholesterol": 1,
-            "gluc_ordinal": 1,
+            "cholesterol_mg_dl": 180,
+            "glucose_mg_dl": 90,
         },
     )
     assert r.status_code == 422
@@ -70,8 +72,8 @@ def test_put_onboarding_risk_reflects_family_features(
         "blood_pressure_systolic": 125,
         "blood_pressure_diastolic": 82,
         "gender": "female",
-        "cholesterol": 2,
-        "gluc_ordinal": 2,
+        "cholesterol_mg_dl": 220,
+        "glucose_mg_dl": 110,
         "smokes": False,
         "drinks_alcohol": None,
         "physically_active": True,

@@ -1,12 +1,12 @@
 # Fambot Backend
 
-HTTP API for user onboarding and **cardiovascular (heart/circulatory) risk scoring** using a trained scikit-learn / XGBoost (or HistGradientBoosting) pipeline. It is **not** a diabetes product; training data and field names follow a public **cardio** exam survey (ordinal tiers, not lab glucose in mg/dL). Clients authenticate with **JWT access tokens** issued by this API after **email/password signup and login**; accounts live in **Firebase Authentication** (server-side Admin SDK + Identity Toolkit), and profiles are stored in **Cloud Firestore**.
+HTTP API for user onboarding and **cardiovascular (heart/circulatory) risk scoring** using a trained scikit-learn / XGBoost (or HistGradientBoosting) pipeline. Clients send **lab values in mg/dL** for total cholesterol and fasting glucose; the API bins them into the cardio training set’s 1–3 ordinals before inference. Clients authenticate with **JWT access tokens** issued by this API after **email/password signup and login**; accounts live in **Firebase Authentication** (server-side Admin SDK + Identity Toolkit), and profiles are stored in **Cloud Firestore**.
 
 This repository is both a **batch training script** (builds `cardiovascular_model.pkl` from [`sources/cardio_train.csv`](sources/cardio_train.csv)) and a **FastAPI** service that serves predictions and persists onboarding data.
 
 **Breaking change:** HTTP routes no longer use a `/v1/` prefix. Clients must call `/auth/…`, `/me/…`, and `/health` directly (for example `POST /auth/login` instead of `POST /v1/auth/login`).
 
-**API 0.7.0:** Unified chat turn endpoint at `POST /v1/chats/{chat_id}/messages` with `Accept` negotiation (`application/json` buffered or `text/event-stream` SSE). Legacy `POST /chat/{chat_id}` and `POST /chat/{chat_id}/stream` remain as deprecated compatibility routes. **API 0.6.0:** Documents are only under `/documents` (removed `/me/documents/*` and `POST /documents/upload`); upload is `POST /documents` with optional form field `analyze=true`. **API 0.5.0:** Family invitations (`/me/family/…`) with single-use expiring links, QR PNG (base64), and perspective-aware relationship labels. **API 0.4.0** onboarding: `PUT /me/onboarding` uses cardiovascular-aligned fields (gender, BP, cholesterol and **`gluc_ordinal`** survey tiers, optional lifestyle flags). See [Onboarding](#put-meonboarding) below.
+**API 0.8.0:** Onboarding accepts **`cholesterol_mg_dl`** and **`glucose_mg_dl`** (mg/dL) and converts them server-side to cardio_train ordinals 1–3 (replaces client-supplied `cholesterol` / `gluc_ordinal` tiers). **API 0.7.0:** Unified chat turn endpoint at `POST /v1/chats/{chat_id}/messages` with `Accept` negotiation (`application/json` buffered or `text/event-stream` SSE). Legacy `POST /chat/{chat_id}` and `POST /chat/{chat_id}/stream` remain as deprecated compatibility routes. **API 0.6.0:** Documents are only under `/documents` (removed `/me/documents/*` and `POST /documents/upload`); upload is `POST /documents` with optional form field `analyze=true`. **API 0.5.0:** Family invitations (`/me/family/…`) with single-use expiring links, QR PNG (base64), and perspective-aware relationship labels. See [Onboarding](#put-meonboarding) below.
 
 ---
 
@@ -267,13 +267,15 @@ Returns the **stored** cardiovascular risk from Firestore (`riskScore` / `riskCl
 | `blood_pressure_systolic` | float | 80–250 (mm Hg) |
 | `blood_pressure_diastolic` | float | 40–150 (mm Hg); must be **less than** systolic |
 | `gender` | `"female"` \| `"male"` | Maps to dataset codes 1 / 2 |
-| `cholesterol` | 1, 2, or 3 | Ordinal: 1 = normal, 2 = above normal, 3 = well above normal |
-| `gluc_ordinal` | 1, 2, or 3 | Self-reported tier matching training column `gluc` (not a blood test value) |
+| `cholesterol_mg_dl` | float | Fasting total cholesterol (mg/dL), 50–600. Mapped to model ordinal: **&lt;200 → 1**, **200–239 → 2**, **≥240 → 3** |
+| `glucose_mg_dl` | float | Fasting plasma glucose (mg/dL, ≥ 8 h fast preferred), 40–600. Mapped to model `gluc` ordinal: **&lt;100 → 1**, **100–125 → 2**, **≥126 → 3** |
 | `smokes` | bool or omit | Omit to let the model impute from training distribution |
 | `drinks_alcohol` | bool or omit | Omit to impute |
 | `physically_active` | bool or omit | Omit to impute |
 
-**Response** (`OnboardingOut`): includes updated `profile`, `risk_score` (0–100), and `risk_class`.
+Clients send lab numbers; the server converts them to the 1–3 bands expected by `cardiovascular_model.pkl` (see [`cholesterol_mg_dl_to_ordinal`](fambot_backend/cardio_features.py) / [`glucose_mg_dl_to_ordinal`](fambot_backend/cardio_features.py)).
+
+**Response** (`OnboardingOut`): includes updated `profile` (with the submitted mg/dL fields), `risk_score` (0–100), and `risk_class`.
 
 Family-aware inputs are **not** part of the JSON body; they are read from the authenticated user’s family group and peer profiles at scoring time (see Features above).
 
@@ -464,8 +466,10 @@ Fields (camelCase in Firestore):
 | `heightCm` | Height (cm) |
 | `weightKg` | Weight (kg) |
 | `gender` | `"female"` or `"male"` |
-| `cholesterol` | 1, 2, or 3 |
-| `glucOrdinal` | 1, 2, or 3 (legacy `glucoseLevel` still read if present) |
+| `cholesterolMgDl` | Fasting total cholesterol (mg/dL) from onboarding |
+| `glucoseMgDl` | Fasting plasma glucose (mg/dL) from onboarding |
+| `cholesterol` | Derived ordinal 1–3 (from `cholesterolMgDl`) |
+| `glucOrdinal` | Derived ordinal 1–3 (from `glucoseMgDl`) |
 | `smokes` | Boolean or null |
 | `drinksAlcohol` | Boolean or null |
 | `physicallyActive` | Boolean or null |
@@ -494,7 +498,7 @@ Reads map these back into **snake_case** JSON in `UserProfileOut`.
 ## Inference and the ML pipeline
 
 - Feature names and order are defined once in [`fambot_backend/cardio_features.py`](fambot_backend/cardio_features.py) (`FEATURE_ORDER`) and must match the columns saved in `cardiovascular_model.pkl`.
-- The API builds a **single-row DataFrame** with: `age_years`, `gender`, `height`, `weight`, `ap_hi`, `ap_lo`, `cholesterol`, `gluc` (from JSON `gluc_ordinal`), `smoke`, `alco`, `active`, plus derived `bmi`, `pulse_pressure`, `map_approx`.
+- The API builds a **single-row DataFrame** with: `age_years`, `gender`, `height`, `weight`, `ap_hi`, `ap_lo`, `cholesterol` and `gluc` (ordinals derived from JSON `cholesterol_mg_dl` / `glucose_mg_dl`), `smoke`, `alco`, `active`, plus derived `bmi`, `pulse_pressure`, `map_approx`.
 - Optional lifestyle fields omitted from JSON are passed as **missing values** and imputed by the **fitted `SimpleImputer`** inside the saved pipeline (trained on `cardio_train.csv`).
 - **BMI** is computed from `height_cm` and `weight_kg` for both persistence and the feature row.
 

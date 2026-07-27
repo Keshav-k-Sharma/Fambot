@@ -3,9 +3,13 @@
 from __future__ import annotations
 
 from enum import Enum
+from typing import Literal
 
 import numpy as np
 import pandas as pd
+
+CholesterolOrdinal = Literal[1, 2, 3]
+GlucOrdinal = Literal[1, 2, 3]
 
 # Raw columns from cardio_train (after age -> age_years); order before derived features.
 BASE_FEATURES: list[str] = [
@@ -52,6 +56,34 @@ def gender_to_dataset_code(gender: Gender | str) -> int:
     if gender == Gender.male:
         return 2
     raise ValueError(f"Unsupported gender: {gender!r}")
+
+
+def cholesterol_mg_dl_to_ordinal(mg_dl: float) -> CholesterolOrdinal:
+    """Map fasting total cholesterol (mg/dL) to cardio_train ordinal 1–3.
+
+    Bands align with common ATP III-style total-cholesterol cutoffs:
+    1 = < 200 (desirable), 2 = 200–239 (borderline high), 3 = ≥ 240 (high).
+    """
+    value = float(mg_dl)
+    if value < 200.0:
+        return 1
+    if value < 240.0:
+        return 2
+    return 3
+
+
+def glucose_mg_dl_to_ordinal(mg_dl: float) -> GlucOrdinal:
+    """Map fasting plasma glucose (mg/dL, ≥ 8 h fast) to cardio_train `gluc` ordinal 1–3.
+
+    Bands align with ADA fasting glucose categories:
+    1 = < 100 (normal), 2 = 100–125 (above normal), 3 = ≥ 126 (well above normal).
+    """
+    value = float(mg_dl)
+    if value < 100.0:
+        return 1
+    if value < 126.0:
+        return 2
+    return 3
 
 
 def _optional_bool_to_float(v: bool | None) -> float:

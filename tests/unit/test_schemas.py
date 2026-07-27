@@ -30,8 +30,8 @@ def test_onboarding_bp_bounds() -> None:
         blood_pressure_systolic=120,
         blood_pressure_diastolic=80,
         gender=Gender.male,
-        cholesterol=1,
-        gluc_ordinal=1,
+        cholesterol_mg_dl=180,
+        glucose_mg_dl=90,
     )
     with pytest.raises(ValidationError):
         OnboardingIn(
@@ -41,6 +41,22 @@ def test_onboarding_bp_bounds() -> None:
             blood_pressure_systolic=120,
             blood_pressure_diastolic=80,
             gender=Gender.male,
-            cholesterol=4,  # type: ignore[arg-type]
-            gluc_ordinal=1,
+            cholesterol_mg_dl=10,  # below ge=50
+            glucose_mg_dl=90,
         )
+
+
+@pytest.mark.unit
+def test_onboarding_accepts_lab_mg_dl() -> None:
+    payload = OnboardingIn(
+        age=40,
+        height_cm=170,
+        weight_kg=70,
+        blood_pressure_systolic=120,
+        blood_pressure_diastolic=80,
+        gender=Gender.female,
+        cholesterol_mg_dl=220.5,
+        glucose_mg_dl=112.0,
+    )
+    assert payload.cholesterol_mg_dl == 220.5
+    assert payload.glucose_mg_dl == 112.0

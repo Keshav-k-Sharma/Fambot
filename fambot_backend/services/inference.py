@@ -7,7 +7,11 @@ from typing import Literal
 
 import joblib
 
-from fambot_backend.cardio_features import build_feature_frame
+from fambot_backend.cardio_features import (
+    build_feature_frame,
+    cholesterol_mg_dl_to_ordinal,
+    glucose_mg_dl_to_ordinal,
+)
 from fambot_backend.schemas import OnboardingIn
 from fambot_backend.services.family_risk_aggregate import (
     compute_family_risk_feature_row,
@@ -64,8 +68,8 @@ def predict_risk(
         blood_pressure_systolic=payload.blood_pressure_systolic,
         blood_pressure_diastolic=payload.blood_pressure_diastolic,
         gender=payload.gender,
-        cholesterol=payload.cholesterol,
-        gluc_ordinal=payload.gluc_ordinal,
+        cholesterol=cholesterol_mg_dl_to_ordinal(payload.cholesterol_mg_dl),
+        gluc_ordinal=glucose_mg_dl_to_ordinal(payload.glucose_mg_dl),
         smokes=payload.smokes,
         drinks_alcohol=payload.drinks_alcohol,
         physically_active=payload.physically_active,

@@ -36,13 +36,11 @@ class TokenOut(BaseModel):
     email: str | None = None
 
 
-CholesterolLevel = Literal[1, 2, 3]
-# Ordinal self-report tier matching cardio_train column `gluc` (not a laboratory glucose measurement).
-GlucOrdinal = Literal[1, 2, 3]
-
-
 class OnboardingIn(BaseModel):
-    """Vitals and survey fields aligned with the cardiovascular training CSV (cardio_train)."""
+    """Vitals and survey fields aligned with the cardiovascular training CSV (cardio_train).
+
+    Lab values are accepted in mg/dL and converted server-side to the dataset's 1–3 ordinals.
+    """
 
     age: int = Field(ge=1, le=120, description="Age in years")
     height_cm: float = Field(ge=120, le=220, description="Height in centimeters")
@@ -58,14 +56,20 @@ class OnboardingIn(BaseModel):
         description="Diastolic blood pressure (mm Hg)",
     )
     gender: Gender = Field(description='"female" or "male" (maps to dataset codes 1 / 2)')
-    cholesterol: CholesterolLevel = Field(
+    cholesterol_mg_dl: float = Field(
+        ge=50,
+        le=600,
         description=(
-            "1 = normal, 2 = above normal, 3 = well above normal (ordinal from cardio_train)"
+            "Fasting total cholesterol in mg/dL. Mapped to model ordinals: "
+            "<200 → 1 (normal/desirable), 200–239 → 2 (above normal), ≥240 → 3 (well above normal)."
         ),
     )
-    gluc_ordinal: GlucOrdinal = Field(
+    glucose_mg_dl: float = Field(
+        ge=40,
+        le=600,
         description=(
-            "Self-reported tier (1–3) aligned with training column `gluc` (survey ordinal; not mg/dL)"
+            "Fasting plasma glucose in mg/dL (≥ 8 h fast preferred). Mapped to model `gluc` ordinals: "
+            "<100 → 1 (normal), 100–125 → 2 (above normal), ≥126 → 3 (well above normal)."
         ),
     )
     smokes: bool | None = Field(
@@ -89,8 +93,8 @@ class UserProfileOut(BaseModel):
     height_cm: float | None = None
     weight_kg: float | None = None
     gender: Gender | None = None
-    cholesterol: int | None = None
-    gluc_ordinal: int | None = None
+    cholesterol_mg_dl: float | None = None
+    glucose_mg_dl: float | None = None
     smokes: bool | None = None
     drinks_alcohol: bool | None = None
     physically_active: bool | None = None

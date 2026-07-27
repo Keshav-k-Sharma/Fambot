@@ -6,7 +6,11 @@ from typing import Any, Literal
 
 from firebase_admin import firestore
 
-from fambot_backend.cardio_features import Gender
+from fambot_backend.cardio_features import (
+    Gender,
+    cholesterol_mg_dl_to_ordinal,
+    glucose_mg_dl_to_ordinal,
+)
 from fambot_backend.core.firebase_init import init_firebase
 from fambot_backend.schemas import OnboardingIn, UserProfileOut
 
@@ -38,8 +42,8 @@ def _doc_to_profile(uid: str, data: dict[str, Any] | None) -> UserProfileOut:
         height_cm=data.get("heightCm"),
         weight_kg=data.get("weightKg"),
         gender=_parse_gender(data.get("gender")),
-        cholesterol=data.get("cholesterol"),
-        gluc_ordinal=data.get("glucOrdinal") if data.get("glucOrdinal") is not None else data.get("glucoseLevel"),
+        cholesterol_mg_dl=data.get("cholesterolMgDl"),
+        glucose_mg_dl=data.get("glucoseMgDl"),
         smokes=data.get("smokes"),
         drinks_alcohol=data.get("drinksAlcohol"),
         physically_active=data.get("physicallyActive"),
@@ -130,8 +134,8 @@ def upsert_onboarding(
             height_cm=payload.height_cm,
             weight_kg=payload.weight_kg,
             gender=payload.gender,
-            cholesterol=payload.cholesterol,
-            gluc_ordinal=payload.gluc_ordinal,
+            cholesterol_mg_dl=payload.cholesterol_mg_dl,
+            glucose_mg_dl=payload.glucose_mg_dl,
             smokes=payload.smokes,
             drinks_alcohol=payload.drinks_alcohol,
             physically_active=payload.physically_active,
@@ -145,13 +149,18 @@ def upsert_onboarding(
         )
     ref = _db().collection("users").document(uid)
     now = datetime.now(timezone.utc)
+    chol_ord = cholesterol_mg_dl_to_ordinal(payload.cholesterol_mg_dl)
+    gluc_ord = glucose_mg_dl_to_ordinal(payload.glucose_mg_dl)
     update = {
         "age": payload.age,
         "heightCm": payload.height_cm,
         "weightKg": payload.weight_kg,
         "gender": payload.gender.value,
-        "cholesterol": payload.cholesterol,
-        "glucOrdinal": payload.gluc_ordinal,
+        "cholesterolMgDl": payload.cholesterol_mg_dl,
+        "glucoseMgDl": payload.glucose_mg_dl,
+        # Derived cardio_train ordinals (kept for debugging / legacy readers).
+        "cholesterol": chol_ord,
+        "glucOrdinal": gluc_ord,
         "smokes": payload.smokes,
         "drinksAlcohol": payload.drinks_alcohol,
         "physicallyActive": payload.physically_active,
