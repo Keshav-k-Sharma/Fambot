@@ -70,7 +70,7 @@ def test_chat_message_v1_stream_contract(
         StreamEvent(payload={"type": "tool_call", "chatId": "c5", "turnId": "tx", "sequence": 3, "timestamp": "now", "name": "list_my_stored_documents"}),
         StreamEvent(payload={"type": "message_end", "chatId": "c5", "turnId": "tx", "sequence": 4, "timestamp": "now", "state": "completed"}),
     ]
-    with patch("fambot_backend.api.routers.chats._orchestrator.run_stream", return_value=iter(events)):
+    with patch("fambot_backend.api.routers.chats._orchestrator.run_stream", return_value=iter(events)) as run_stream:
         r = client.post(
             "/v1/chats/00000000-0000-0000-0000-0000000000c5/messages",
             data={"message": "hello"},
@@ -81,3 +81,6 @@ def test_chat_message_v1_stream_contract(
     assert '"type": "tool_call"' in r.text
     assert '"chatId": "c5"' in r.text
     assert '"turnId": "tx"' in r.text
+    # Regression: streaming must pass chat_id as str (same as buffered), not UUID.
+    assert run_stream.call_args.kwargs["chat_id"] == "00000000-0000-0000-0000-0000000000c5"
+    assert isinstance(run_stream.call_args.kwargs["chat_id"], str)

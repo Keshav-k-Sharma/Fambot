@@ -73,7 +73,7 @@ def create_chat_message_v1(
     if "text/event-stream" in accept_value:
         return StreamingResponse(
             _new_streaming_sse(
-                chat_id=chat_id,
+                chat_id=str(chat_id),
                 uid=uid,
                 message=message,
                 file_name=file_name,
